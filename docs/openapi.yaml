@@ -1,0 +1,961 @@
+openapi: 3.0.3
+info:
+  title: Sar7ny API
+  description: |
+    Backend for an anonymous messaging app.
+    - Auth: short-lived JWT access tokens + rotating opaque refresh tokens.
+    - Messages: sent anonymously, the sender identity is never stored.
+    - Reports: anonymous or authenticated, moderated by admins only.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Google OAuth
+  - name: Users
+  - name: Messages
+  - name: Reports
+  - name: Password
+  - name: Admin
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Username:
+      name: username
+      in: path
+      required: true
+      schema: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9_]+$' }
+    MessageId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' }
+    ReportId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' }
+
+  schemas:
+    SuccessResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: Operation completed successfully }
+        data: { type: object }
+    ErrorResponse:
+      type: object
+      required: [success, message, code]
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string, example: Request validation failed }
+        code: { type: string, example: VALIDATION_ERROR }
+        requestId: { type: string, nullable: true }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+    PublicUser:
+      type: object
+      properties:
+        username: { type: string, example: sara }
+        name: { type: string, example: Sara }
+        bio: { type: string }
+        avatar: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    SafeUser:
+      allOf:
+        - $ref: '#/components/schemas/PublicUser'
+        - type: object
+          properties:
+            _id: { type: string }
+            email: { type: string, nullable: true }
+            role: { type: string, enum: [user, admin] }
+            isActive: { type: boolean }
+            isVerified: { type: boolean }
+            isReceivingMessages: { type: boolean }
+            authProvider: { type: string, enum: [local, google] }
+            lastLoginAt: { type: string, format: date-time, nullable: true }
+            updatedAt: { type: string, format: date-time }
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, example: 900 }
+
+    GoogleAuthData:
+      description: Success payload of the Google callback (JSON mode) and of POST /auth/google/exchange.
+      allOf:
+        - $ref: '#/components/schemas/TokenPair'
+        - type: object
+          properties:
+            user: { $ref: '#/components/schemas/SafeUser' }
+            created:
+              type: boolean
+              description: True when this sign-in created the account, false on every later sign-in.
+            linked: { type: boolean, description: Present only on link confirmations. }
+            alreadyLinked: { type: boolean, description: Present only on link confirmations. }
+
+    GoogleLinkList:
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string, example: google }
+              providerId: { type: string, description: The Google `sub` claim }
+              createdAt: { type: string, format: date-time }
+        hasPassword:
+          type: boolean
+          description: Whether the account also has a local password (guards unlinking).
+
+    Message:
+      type: object
+      properties:
+        _id: { type: string }
+        recipient: { type: string, description: Owner of the message }
+        content: { type: string, maxLength: 2000 }
+        isRead: { type: boolean }
+        readAt: { type: string, format: date-time, nullable: true }
+        isArchived: { type: boolean }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        isDeleted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        message: { type: string, nullable: true, description: Identifier of the reported message }
+        messageContent:
+          type: string
+          nullable: true
+          description: >-
+            Reported text, present only on the admin list/detail endpoints
+            (populated server-side). Null right after creation or when the
+            message no longer exists.
+        messageCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Creation time of the reported message (admin endpoints only).
+        reason:
+          type: string
+          enum: [harassment, threats, hate_speech, spam, sexual_content, other]
+        details: { type: string, maxLength: 1000 }
+        status: { type: string, enum: [pending, reviewed, resolved, rejected] }
+        reporter: { type: string, nullable: true }
+        reviewedBy: { type: string, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+        hasNextPage: { type: boolean }
+
+    CursorMeta:
+      type: object
+      properties:
+        limit: { type: integer }
+        nextCursor: { type: string, nullable: true }
+        hasMore: { type: boolean }
+        count: { type: integer }
+
+  responses:
+    BadRequest:
+      description: Validation or malformed request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthenticated:
+      description: Missing or invalid credentials/token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Authenticated but not allowed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Missing or not visible to the caller
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Duplicate resource or conflicting state
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ServiceUnavailable:
+      description: Feature exists but is switched off (e.g. password recovery, no delivery channel)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Liveness probe (no sensitive data)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Create an account (role is always "user")
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, username, email, password]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 100 }
+                username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9_]+$' }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 72, description: '8-72 chars, at least one letter and one number' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/SafeUser' }
+                          accessToken: { type: string }
+                          refreshToken: { type: string }
+                          tokenType: { type: string, example: Bearer }
+                          expiresIn: { type: integer, example: 900 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Login with email or username
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [identifier, password]
+              properties:
+                identifier: { type: string, description: Email or username }
+                password: { type: string }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/SafeUser' }
+                          accessToken: { type: string }
+                          refreshToken: { type: string }
+                          tokenType: { type: string, example: Bearer }
+                          expiresIn: { type: integer, example: 900 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Rotate the refresh token and get a new pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke every refresh token of the current user
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user (sanitized)
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/SafeUser' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/google:
+    get:
+      tags: [Google OAuth]
+      security: []
+      summary: Start the Google sign-in flow
+      description: |
+        Generates `state` (CSRF), a PKCE `code_verifier` and an OIDC `nonce`,
+        stores them in a signed HttpOnly `SameSite=Lax` cookie scoped to
+        `/api/v1/auth/google`, and redirects the browser to Google.
+        The redirect URI is taken from the environment only, never from the
+        query string.
+      parameters:
+        - { name: login_hint, in: query, required: false, schema: { type: string, maxLength: 254 } }
+      responses:
+        '302':
+          description: Redirect to Google's consent screen; the flow cookie is set.
+          headers:
+            Location:
+              description: accounts.google.com authorization URL
+              schema: { type: string, format: uri }
+            Set-Cookie:
+              description: 'sarhny_oauth_flow=<HMAC-signed payload>; Path=/api/v1/auth/google; HttpOnly; SameSite=Lax'
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/google/callback:
+    get:
+      tags: [Google OAuth]
+      security: []
+      summary: OAuth redirect target — verifies state, exchanges the code, verifies the ID token
+      description: |
+        Verifies the signed flow cookie against `state`, checks the `iss` hint,
+        exchanges the authorization code server-side with the stored PKCE
+        verifier, and verifies the Google ID token (signature, issuer, audience,
+        expiry, nonce).
+
+        **JSON mode** (default, `OAUTH_REDIRECT_URL` unset) returns the token
+        pair directly. **Redirect mode** (configured) issues a one-time
+        `handoff` code and 302s to the SPA, which then calls
+        `POST /api/v1/auth/google/exchange`.
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string, maxLength: 4096 } }
+        - { name: state, in: query, required: true, schema: { type: string, maxLength: 512 } }
+        - { name: error, in: query, required: false, schema: { type: string, enum: [access_denied, invalid_request, invalid_scope, unauthorized_client, unsupported_response_type, server_error, temporarily_unavailable] } }
+        - { name: error_description, in: query, required: false, schema: { type: string, maxLength: 1000 } }
+        - { name: iss, in: query, required: false, schema: { type: string, enum: ['https://accounts.google.com', accounts.google.com] } }
+      responses:
+        '200':
+          description: Signed in with an existing account.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/GoogleAuthData' } }
+        '201':
+          description: Account created on this sign-in.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/GoogleAuthData' } }
+        '302':
+          description: Redirect mode — `?handoff=<one-time code>` (or `?error=<CODE>` on failure).
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+            Set-Cookie:
+              description: The flow cookie is always cleared here.
+              schema: { type: string }
+        '400':
+          description: 'Bad request: OAUTH_STATE_MISMATCH, OAUTH_STATE_EXPIRED, OAUTH_ACCESS_DENIED or OAUTH_NOT_CONFIGURED'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: 'Verification failure: OAUTH_CODE_EXCHANGE_FAILED, OAUTH_ID_TOKEN_INVALID, OAUTH_EMAIL_NOT_VERIFIED or ACCOUNT_DISABLED'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 'Account conflict: OAUTH_ACCOUNT_CONFLICT (no auto-linking) or OAUTH_ALREADY_LINKED'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /api/v1/auth/google/exchange:
+    post:
+      tags: [Google OAuth]
+      security: []
+      summary: Redeem a one-time handoff code for the token pair
+      description: |
+        Only used when `OAUTH_REDIRECT_URL` is set. The code is single use,
+        stored as a SHA-256 hash and expires after `OAUTH_HANDOFF_TTL_MS`.
+        A link confirmation returns no tokens — the caller is already authenticated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handoff]
+              additionalProperties: false
+              properties:
+                handoff: { type: string, minLength: 20, maxLength: 128 }
+      responses:
+        '200':
+          description: Token pair (login purpose) or link confirmation (link purpose)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/GoogleAuthData' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: 'OAUTH_HANDOFF_INVALID (unknown, expired or already used) or ACCOUNT_DISABLED'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/google/link:
+    post:
+      tags: [Google OAuth]
+      summary: Start linking a Google identity to the current user
+      description: |
+        Returns `authorizationUrl` for the browser to open. The flow cookie is
+        set on this reply, so a cross-origin SPA must send credentials
+        (`withCredentials: true`).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                login_hint: { type: string, maxLength: 254 }
+      responses:
+        '200':
+          description: Authorization URL to open in the browser
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          authorizationUrl: { type: string, format: uri }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Google OAuth]
+      summary: Unlink Google from the current user
+      description: Refused with `400 OAUTH_LAST_LOGIN_METHOD` when the account has no local password.
+      responses:
+        '200':
+          description: Unlinked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties: { unlinked: { type: boolean, example: true } }
+        '400':
+          description: 'OAUTH_NOT_LINKED or OAUTH_LAST_LOGIN_METHOD'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/google/links:
+    get:
+      tags: [Google OAuth]
+      summary: List the providers linked to the current user
+      responses:
+        '200':
+          description: Linked providers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/GoogleLinkList' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/users/{username}:
+    get:
+      tags: [Users]
+      security: []
+      summary: Public profile (no email, no role)
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '200':
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/PublicUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/users/me:
+    patch:
+      tags: [Users]
+      summary: Update own profile (name/bio/avatar only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 2, maxLength: 100 }
+                bio: { type: string, maxLength: 300 }
+                avatar: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Profile updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    delete:
+      tags: [Users]
+      summary: Delete own account (documented data-retention policy)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  description: >
+                    Required for any account that already has a password.
+                    Omit it for a Google-only account that never had one.
+      responses:
+        '200': { description: Account deleted, policy returned }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/users/me/password:
+    patch:
+      tags: [Users]
+      summary: Change password (revokes every session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  description: >
+                    Required for any account that already has a password.
+                    Omit it for a Google-only account that never had one —
+                    such callers are confirmed by their session alone. An
+                    empty string is rejected (400), it is not treated as
+                    omitted.
+                newPassword: { type: string, minLength: 8, maxLength: 72 }
+      responses:
+        '200': { description: Password changed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/messages/{username}:
+    post:
+      tags: [Messages]
+      security: []
+      summary: Send an anonymous message (sender identity is never stored)
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201': { description: Delivered anonymously }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/messages:
+    get:
+      tags: [Messages]
+      summary: Own inbox (cursor pagination, newest first)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string }, description: nextCursor from the previous page }
+        - { name: isRead, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: isArchived, in: query, schema: { type: string, enum: ['true', 'false'] } }
+      responses:
+        '200':
+          description: Paginated inbox
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          messages:
+                            type: array
+                            items: { $ref: '#/components/schemas/Message' }
+                          pagination: { $ref: '#/components/schemas/CursorMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/messages/{id}:
+    get:
+      tags: [Messages]
+      summary: Read one of own messages (404 for other users)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200': { description: The message }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Messages]
+      summary: Logical delete (hidden from the inbox, row retained)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/messages/{id}/read:
+    patch:
+      tags: [Messages]
+      summary: Mark a message as read (sets readAt)
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200': { description: Marked as read }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/messages/{id}/archive:
+    patch:
+      tags: [Messages]
+      summary: Archive or unarchive a message
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [archived]
+              properties:
+                archived: { type: boolean }
+      responses:
+        '200': { description: Archival state updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/reports:
+    post:
+      tags: [Reports]
+      security: []
+      summary: Report a message (anonymous or logged-in)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [messageId, reason]
+              properties:
+                messageId: { type: string, pattern: '^[0-9a-fA-F]{24}$' }
+                reason:
+                  type: string
+                  enum: [harassment, threats, hate_speech, spam, sexual_content, other]
+                details: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Report submitted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    get:
+      tags: [Reports]
+      summary: List reports (admin only)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, reviewed, resolved, rejected] } }
+        - { name: reason, in: query, schema: { type: string, enum: [harassment, threats, hate_speech, spam, sexual_content, other] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Paginated reports
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          reports:
+                            type: array
+                            items: { $ref: '#/components/schemas/Report' }
+                          pagination: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/reports/{id}:
+    get:
+      tags: [Reports]
+      summary: Single report (admin only)
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+      responses:
+        '200': { description: The report }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/reports/{id}/status:
+    patch:
+      tags: [Reports]
+      summary: Update report status (admin only, audited)
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [pending, reviewed, resolved, rejected] }
+      responses:
+        '200': { description: Status updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/password/forgot:
+    post:
+      tags: [Password]
+      security: []
+      summary: >
+        Request a reset link — DISABLED (503). No delivery channel exists, so
+        the same 503 is returned for every caller, existing account or not.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/password/reset:
+    post:
+      tags: [Password]
+      security: []
+      summary: Reset the password with a one-time token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8, maxLength: 72 }
+      responses:
+        '200': { description: Password reset, sessions revoked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Instance counters (admin only)
+      responses:
+        '200': { description: Stats }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: Paginated user list (admin only, sanitized)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: Users }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/users/{id}:
+    patch:
+      tags: [Admin]
+      summary: Enable or disable an account (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isActive]
+              properties:
+                isActive: { type: boolean }
+      responses:
+        '200': { description: Updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Audit trail (admin only)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: action, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Audit logs }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }

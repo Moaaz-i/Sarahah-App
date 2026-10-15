@@ -1,0 +1,1423 @@
+{
+  "info": {
+    "_postman_id": "3f6a1c92-8d4e-4b7a-9c15-2e7b4d0a6f31",
+    "name": "Sar7ny API (صريحني)",
+    "description": "Backend for the **Sar7ny** anonymous messaging app.\n\n**Base URL** `{{baseUrl}}` — all endpoints live under `/api/v1`.\n\n---\n\n### Getting started\n\n1. `npm run dev` (see README §5).\n2. Run **01 Auth → Register**; `accessToken`, `refreshToken`, `userId` and `username` are stored automatically as collection variables by the response scripts.\n3. Requests marked with bearer auth now work. Set `recipientUsername` to another account to receive messages and `messageId` / `reportId` / `targetUserId` from the responses you get.\n\n---\n\n### Conventions\n\n- **Success**: `{\"success\": true, \"message\": \"...\", \"data\": {...}}`\n- **Error**: `{\"success\": false, \"message\": \"...\", \"code\": \"ERROR_CODE\", \"requestId\": \"...\"}` (`details` appears for validation errors)\n- Rate limits default to 300 global / 20 auth / 10 messages / 10 reports / 5 password per 15 minutes, per IP. Set `RATE_LIMIT_ENABLED=false` in `.env` while testing if you keep hitting `429 RATE_LIMITED`.\n- Unknown fields are rejected, and `$`-operators / dotted keys are stripped from input (NoSQL-injection hardening).\n\n---\n\n**Google OAuth (folder 02)** needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` to be set in `.env`; see README §10. It has not been exercised against Google's servers with real credentials.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": []
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response is not a server error', function () {",
+          "    pm.expect(pm.response.code).toBeLessThan(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Health & Docs",
+      "description": "No authentication. Useful for smoke checks before anything else.",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns `{success, message, data:{status,uptime}}`."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI contract",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/openapi.yaml",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "openapi.yaml"
+              ]
+            },
+            "description": "The full machine-readable API contract served by the app."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 Auth",
+      "description": "JWT auth: 15-minute HS256 access token + opaque refresh token (stored server-side as a SHA-256 hash, rotated on every use).\n\nRegister/login/refresh are rate limited to `RATE_LIMIT_AUTH_MAX` (default 20) per 15 minutes, so the same IP may be throttled while you test.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates an account. Change `username` / `email` to unique values before sending (a repeat answers `409`). `role` is always forced to `user` server-side — it can never be supplied here.\n\nPassword policy: 8-72 chars with at least one letter and one number.\n\nOn success the response variables `accessToken`, `refreshToken`, `userId` and `username` are stored automatically.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sar7ny Demo\",\n  \"username\": \"demo_user\",\n  \"email\": \"demo@example.com\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data) {",
+                  "    if (body.data.accessToken) pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "    if (body.data.refreshToken) pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "    if (body.data.user && body.data.user._id) pm.collectionVariables.set('userId', body.data.user._id);",
+                  "    if (body.data.user && body.data.user.username) pm.collectionVariables.set('username', body.data.user.username);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "`identifier` accepts either the username or the email.\n\nUnknown user and wrong password return byte-identical generic 401 responses (no account enumeration).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"demo_user\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data) {",
+                  "    if (body.data.accessToken) pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "    if (body.data.refreshToken) pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "    if (body.data.user && body.data.user._id) pm.collectionVariables.set('userId', body.data.user._id);",
+                  "    if (body.data.user && body.data.user.username) pm.collectionVariables.set('username', body.data.user.username);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh tokens",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates the refresh token. The old one becomes invalid immediately; presenting it again is treated as token reuse and revokes the entire session chain.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data) {",
+                  "    if (body.data.accessToken) pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "    if (body.data.refreshToken) pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "    if (body.data.user && body.data.user._id) pm.collectionVariables.set('userId', body.data.user._id);",
+                  "    if (body.data.user && body.data.user.username) pm.collectionVariables.set('username', body.data.user.username);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes the refresh token server-side. Requires a valid access token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Returns the authenticated user. 401 for a missing, expired, forged or disabled-account token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 Google OAuth",
+      "description": "Sign in with Google (OAuth 2.0 / OpenID Connect).\n\n**These endpoints are disabled until `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` are all set** — otherwise they answer `400 OAUTH_NOT_CONFIGURED`.\n\nThe flow is browser-driven: `GET /` sets a signed HttpOnly flow cookie (`state` + PKCE `code_verifier` + `nonce`) and 302s to accounts.google.com, which redirects back to `/callback`. Two response modes:\n\n- **JSON (default)** — the callback replies with the token pair directly.\n- **Redirect** — set `OAUTH_REDIRECT_URL` and the callback 302s to your SPA with a one-time `handoff` code, redeemed by `POST /exchange`. Tokens are never placed in a URL.\n\nSee README section 10 for the Google Cloud Console setup and the exact redirect URI to register.",
+      "item": [
+        {
+          "name": "Start sign-in flow",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google?login_hint=demo@example.com",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google"
+              ],
+              "query": [
+                {
+                  "key": "login_hint",
+                  "value": "demo@example.com"
+                }
+              ]
+            },
+            "description": "**Open this in a browser, not in Postman.**\n\nReturns `302` to accounts.google.com with `state`, `code_challenge` (S256) and `nonce` in the query, plus the `sarhny_oauth_flow` cookie (`HttpOnly; SameSite=Lax; Path=/api/v1/auth/google`).\n\nA `redirect_uri` supplied in the query is ignored — it always comes from the environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Callback (called by Google)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/callback?code={{googleCode}}&state={{oauthState}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "{{googleCode}}"
+                },
+                {
+                  "key": "state",
+                  "value": "{{oauthState}}"
+                }
+              ]
+            },
+            "description": "**Only Google calls this** — the browser arrives here as part of the redirect chain.\n\nVerifies the signed flow cookie against `state` (CSRF), checks the `iss` hint, exchanges the code server-side with the stored PKCE verifier, and verifies the ID token (signature, issuer, audience, expiry, nonce) using `google-auth-library`.\n\nFailure codes: `OAUTH_STATE_MISMATCH` (400), `OAUTH_STATE_EXPIRED` (400), `OAUTH_ACCESS_DENIED` (400), `OAUTH_CODE_EXCHANGE_FAILED` (401), `OAUTH_ID_TOKEN_INVALID` (401), `OAUTH_EMAIL_NOT_VERIFIED` (401), `OAUTH_ACCOUNT_CONFLICT` (409), `OAUTH_ALREADY_LINKED` (409).\n\nThe flow cookie is cleared on every attempt, so a replayed callback fails."
+          },
+          "response": []
+        },
+        {
+          "name": "Exchange handoff code",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/exchange",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google",
+                "exchange"
+              ]
+            },
+            "description": "Only used when `OAUTH_REDIRECT_URL` is set. The code is single-use, stored as a SHA-256 hash and expires after `OAUTH_HANDOFF_TTL_MS` (60s by default).\n\nA link-purpose handoff returns `{linked: true}` **without** minting a new token pair — the caller is already authenticated. Unknown/reused codes return `401 OAUTH_HANDOFF_INVALID`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"handoff\": \"{{handoff}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start linking Google",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google",
+                "link"
+              ]
+            },
+            "description": "Returns `{authorizationUrl}` for the browser to open; the flow cookie is set on this reply.\n\nLinking is **explicit only** — a Google identity whose verified email matches an existing password account is never linked automatically (`409 OAUTH_ACCOUNT_CONFLICT`).\n\nThe body is `.strict()`: sending `role`, `isVerified` or any unknown field returns `400 VALIDATION_ERROR`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_hint\": \"demo@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List linked providers",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google",
+                "links"
+              ]
+            },
+            "description": "Returns `{links, hasPassword}`. `hasPassword` is what guards unlinking."
+          },
+          "response": []
+        },
+        {
+          "name": "Unlink Google",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/google/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "google",
+                "link"
+              ]
+            },
+            "description": "Removed with `400 OAUTH_LAST_LOGIN_METHOD` when the account has no local password (lockout prevention), and `400 OAUTH_NOT_LINKED` when there is nothing to unlink."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 Users",
+      "description": "Self-service routes plus the public profile.",
+      "item": [
+        {
+          "name": "Update own profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me"
+              ]
+            },
+            "description": "Only `name`, `bio` and `avatar` are accepted (`avatar` must be an http(s) URL or empty). `role`, `isActive`, `isVerified` and `username` are rejected with `400 VALIDATION_ERROR`. Sending an empty body is also rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sar7ny Demo\",\n  \"bio\": \"Testing the API\",\n  \"avatar\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "password"
+              ]
+            },
+            "description": "`currentPassword` is required for any account that already has a password. Omit it for a Google-only account that never had one — such callers are confirmed by their session alone; an empty string is rejected with 400 rather than treated as omitted. On success every other refresh token for the account is revoked (the session that made the change is kept).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Password123\",\n  \"newPassword\": \"NewPassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete own account",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me"
+              ]
+            },
+            "description": "Soft delete: `deletedAt` is set, sessions are revoked, and the account is wiped after `DELETED_ACCOUNT_RETENTION_DAYS` (30 by default). Response is generic. `password` is required for any account that already has one; omit it for a Google-only account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Public profile",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{username}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{username}}"
+              ]
+            },
+            "description": "No authentication. Returns the public view only (username, name, bio, avatar, createdAt) — never the email, role or account status. 404 for missing or disabled accounts."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 Messages",
+      "description": "Anonymous sending (the Message schema has **no sender field** — identity, IP and user agent are never persisted) plus the recipient's inbox.\n\nSending is rate limited to `RATE_LIMIT_MESSAGE_MAX` (default 10) per recipient per day.",
+      "item": [
+        {
+          "name": "Send an anonymous message",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{recipientUsername}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{recipientUsername}}"
+              ]
+            },
+            "description": "**Public and anonymous.** No access token required; supplying one does not record it.\n\nThe recipient username comes from the path (`{{recipientUsername}}`). Content is 1-2000 chars.\n\nThe response is only `{sent: true}` — **no message id is returned**, on purpose: an anonymous send must not hand the sender a handle into someone's inbox. Run *List my inbox* as the recipient and copy `data.messages[0]._id` into `{{messageId}}` for the requests below.\n\nReturns the same generic 404 whether the recipient does not exist or has closed their inbox, so usernames cannot be probed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hello from Postman — this is sent anonymously.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List my inbox",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages?limit=20&isRead=false&isArchived=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "isRead",
+                  "value": "false"
+                },
+                {
+                  "key": "isArchived",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "**Cursor pagination** (not page/number). Drop `cursor` for the first page, then pass `data.nextCursor` from the previous response. `limit` is 1-50. `isRead` / `isArchived` are optional booleans.\n\nMessages are at `data.messages[]`; copy `data.messages[0]._id` into `{{messageId}}` (an anonymous send never returns the id itself)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one of my messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Scoped to the caller's own messages; anything else returns `404` (not 403) so ids cannot be probed."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark as read",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}",
+                "read"
+              ]
+            },
+            "description": "No body. Idempotent."
+          },
+          "response": []
+        },
+        {
+          "name": "Archive / unarchive",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}",
+                "archive"
+              ]
+            },
+            "description": "`archived` defaults to `true`; send `false` to restore from the archive.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"archived\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Logical delete — the document is marked deleted and removed from every listing."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 Reports",
+      "description": "Moderation. Anyone (anonymous or authenticated) can report; only admins can review.\n\nRate limited to `RATE_LIMIT_REPORT_MAX` (default 10) per salted fingerprint per day.",
+      "item": [
+        {
+          "name": "Report a message",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports"
+              ]
+            },
+            "description": "**Works anonymously.** Auth is optional — a valid access token is attached as the reporter when present, otherwise the report is stored with no reporter identity.\n\n`reason` must be one of: `harassment`, `threats`, `hate_speech`, `spam`, `sexual_content`, `other`. `details` is optional, max 1000 chars.\n\nThe report comes back at `data.report` with its identifier as **`id`** (not `_id`) — copy that value into `{{reportId}}` for the admin review requests.\n\nDuplicate reports from the same source for the same message are rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"{{messageId}}\",\n  \"reason\": \"spam\",\n  \"details\": \"Repeated unsolicited links.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List reports (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports?status=pending&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "**Requires the `admin` role.** Page/limit pagination (`limit` max 100). `status`: `pending`, `reviewed`, `resolved`, `rejected`. Non-admins get `403`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get a report (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{reportId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{reportId}}"
+              ]
+            },
+            "description": "**Requires the `admin` role.** The report identifier is exposed as `data.report.id`."
+          },
+          "response": []
+        },
+        {
+          "name": "Update report status (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{reportId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{reportId}}",
+                "status"
+              ]
+            },
+            "description": "**Requires the `admin` role.** Every change writes an `AuditLog` entry. `status` must be one of: `pending`, `reviewed`, `resolved`, `rejected`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"reviewed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 Password",
+      "description": "One-time reset flow. **The response is always a generic 200** whether or not the email exists, so this endpoint cannot be used to discover accounts.\n\nRate limited to `RATE_LIMIT_PASSWORD_MAX` (default 5) per 15 minutes.",
+      "item": [
+        {
+          "name": "Forgot password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/password/forgot",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "password",
+                "forgot"
+              ]
+            },
+            "description": "**Disabled.** Answers `503 PASSWORD_RESET_DISABLED` for every caller — existing account or not, Google or local — because there is no delivery channel left to send a link (email was removed from the project). Identical status and body either way, so it cannot be used to discover accounts. See README §11.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/password/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "password",
+                "reset"
+              ]
+            },
+            "description": "The token is single-use, stored hashed and validated against `expiresAt` + `usedAt` (MongoDB's TTL sweep is not trusted on its own because it is not immediate).\n\nOn success every refresh token for the account is revoked, forcing a re-login everywhere.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"BrandNew123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 Admin",
+      "description": "**Every route here requires an authenticated account with `role: admin`.**\n\nCreate the first admin with `npm run admin:create` (README section 9) — the API never grants the role itself.",
+      "item": [
+        {
+          "name": "Platform stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "stats"
+              ]
+            },
+            "description": "Aggregate counts for the dashboard."
+          },
+          "response": []
+        },
+        {
+          "name": "List users",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Page/limit pagination (`limit` max 100)."
+          },
+          "response": []
+        },
+        {
+          "name": "Enable / disable a user",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}"
+              ]
+            },
+            "description": "Disabling a user immediately invalidates their access and refresh tokens. Admins cannot disable their own account (`400`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List audit logs",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/audit-logs?page=1&limit=20&action=report.reviewed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "action",
+                  "value": "report.reviewed"
+                }
+              ]
+            },
+            "description": "Page/limit pagination with an optional exact `action` filter. Audit rows never contain secrets or message content."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "demo_user",
+      "type": "string"
+    },
+    {
+      "key": "recipientUsername",
+      "value": "another_user",
+      "type": "string"
+    },
+    {
+      "key": "targetUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "messageId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reportId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "handoff",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "oauthState",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "googleCode",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
