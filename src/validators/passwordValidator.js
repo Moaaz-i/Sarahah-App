@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 /**
- * POST /password/forgot — the body is still validated, but the endpoint is
- * disabled and answers 503 PASSWORD_RESET_DISABLED for every caller.
+ * POST /password/forgot — send a 6-digit OTP to the account email.
+ * Always answers 202 whether or not the account exists (no enumeration).
  */
 export const forgotPasswordSchema = z
   .object({
@@ -16,14 +16,18 @@ export const forgotPasswordSchema = z
   })
   .strict();
 
-/** POST /password/reset */
+/** POST /password/reset — verify the OTP and set the new password. */
 export const resetPasswordSchema = z
   .object({
-    token: z
-      .string({ required_error: 'token is required' })
+    email: z
+      .string({ required_error: 'email is required' })
       .trim()
-      .min(20, 'token is invalid')
-      .max(512, 'token is invalid'),
+      .email('invalid email format')
+      .transform((v) => v.toLowerCase()),
+    otp: z
+      .string({ required_error: 'otp is required' })
+      .trim()
+      .regex(/^\d{6}$/, 'otp must be a 6-digit code'),
     newPassword: z
       .string({ required_error: 'newPassword is required' })
       .min(8, 'newPassword must be at least 8 characters')

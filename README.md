@@ -1,4 +1,4 @@
-# Sar7ny API (صريحني)
+# Sar7ny API (صارحني)
 
 Backend for an **anonymous messaging** app: users share a public username,
 strangers send them anonymous messages, and admins moderate reports.

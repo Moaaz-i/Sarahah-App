@@ -293,12 +293,32 @@ export const reportsApi = {
 export const adminApi = {
   stats: () => get('/admin/stats'),
   users: ({ page = 1, limit = 20 } = {}) => get(`/admin/users?page=${page}&limit=${limit}`),
+  getUser: (id) => get(`/admin/users/${id}`),
   setUserActive: (id, isActive) => patch(`/admin/users/${id}`, { isActive }),
+  setUserRole: (id, role) => patch(`/admin/users/${id}/role`, { role }),
+  resetUserPassword: (id, newPassword) => patch(`/admin/users/${id}/password`, { newPassword }),
+  deleteUser: (id) => del(`/admin/users/${id}`),
+  reports: ({ page = 1, limit = 20, status } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) qs.set('status', status);
+    return get(`/admin/reports?${qs}`);
+  },
+  updateReport: (id, status) => patch(`/admin/reports/${id}`, { status }),
   auditLogs: ({ page = 1, limit = 20, action } = {}) => {
     const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (action) qs.set('action', action);
     return get(`/admin/audit-logs?${qs}`);
   },
+};
+
+export const passwordApi = {
+  forgot: (email) => post('/password/forgot', { email }, { auth: false }),
+  reset: (body) => post('/password/reset', body, { auth: false }),
+};
+
+export const confirmEmailApi = {
+  send: () => post('/confirm-email/send', {}),
+  verify: (code) => post('/confirm-email/verify', { code }),
 };
 
 export { API_URL };

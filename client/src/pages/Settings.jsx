@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { usersApi, googleApi, ApiError } from '../lib/api.js';
+import { usersApi, googleApi, confirmEmailApi, ApiError } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useToast } from '../components/Toast.jsx';
 import Field from '../components/Field.jsx';
@@ -8,8 +8,23 @@ import Alert from '../components/Alert.jsx';
 import Avatar from '../components/Avatar.jsx';
 import Modal from '../components/Modal.jsx';
 
-/** Public avatar URLs the backend will happily store (it never fetches them). */
-const PRESETS = Array.from({ length: 8 }, (_, i) => `https://i.pravatar.cc/200?img=${i + 1}`);
+/**
+ * Public avatar URLs the backend will happily store (it never fetches them).
+ * All are self-contained SVG data URIs — beautiful nature scenery, no people,
+ * and they always render even offline.
+ */
+const NATURE = (id, label, svg) => ({ id, label, url: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` });
+
+const PRESETS = [
+  NATURE('sunset', 'غروب بحري', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff6b35"/><stop offset="45%" stop-color="#f7c948"/><stop offset="100%" stop-color="#2d5016"/></linearGradient></defs><rect width="200" height="200" fill="url(#s)"/><circle cx="100" cy="110" r="45" fill="#fff3b0" opacity="0.95"/><rect y="140" width="200" height="60" fill="#1a3a1a"/><ellipse cx="40" cy="150" rx="30" ry="12" fill="#2d5016"/><ellipse cx="160" cy="148" rx="35" ry="14" fill="#2d5016"/></svg>`),
+  NATURE('mountains', 'جبال زرقاء', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="m" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#74b9ff"/><stop offset="100%" stop-color="#a29bfe"/></linearGradient></defs><rect width="200" height="200" fill="url(#m)"/><circle cx="155" cy="50" r="22" fill="#ffeaa7"/><polygon points="0,200 60,90 120,200" fill="#0984e3"/><polygon points="70,200 140,70 200,200" fill="#6c5ce7"/><polygon points="120,200 175,110 200,200" fill="#4834d4"/><rect y="180" width="200" height="20" fill="#2d3436"/></svg>`),
+  NATURE('forest', 'غابة ضبابية', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#dfe6e9"/><stop offset="100%" stop-color="#b2bec3"/></linearGradient></defs><rect width="200" height="200" fill="url(#f)"/><rect x="20" y="60" width="8" height="140" fill="#2d3436"/><polygon points="24,40 8,100 40,100" fill="#00b894"/><polygon points="24,70 5,130 43,130" fill="#00a381"/><rect x="60" y="50" width="10" height="150" fill="#2d3436"/><polygon points="65,25 47,95 83,95" fill="#00b894"/><polygon points="65,60 42,130 88,130" fill="#00a381"/><rect x="110" y="65" width="7" height="135" fill="#2d3436"/><polygon points="113,45 98,100 128,100" fill="#00b894"/><polygon points="113,72 95,135 131,135" fill="#00a381"/><rect x="150" y="45" width="11" height="155" fill="#2d3436"/><polygon points="155,20 136,90 174,90" fill="#00b894"/><polygon points="155,55 132,130 178,130" fill="#00a381"/></svg>`),
+  NATURE('ocean', 'أمواج المحيط', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="o" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#81ecec"/><stop offset="100%" stop-color="#0984e3"/></linearGradient></defs><rect width="200" height="200" fill="url(#o)"/><circle cx="100" cy="45" r="28" fill="#fdcb6e"/><path d="M0,120 Q25,100 50,120 T100,120 T150,120 T200,120 L200,200 L0,200 Z" fill="#0984e3" opacity="0.9"/><path d="M0,140 Q25,120 50,140 T100,140 T150,140 T200,140 L200,200 L0,200 Z" fill="#74b9ff" opacity="0.8"/><path d="M0,160 Q25,140 50,160 T100,160 T150,160 T200,160 L200,200 L0,200 Z" fill="#a29bfe" opacity="0.6"/></svg>`),
+  NATURE('aurora', 'شفق قطبي', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="a" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0c0c1d"/><stop offset="100%" stop-color="#1a1a3e"/></linearGradient></defs><rect width="200" height="200" fill="url(#a)"/><circle cx="50" cy="30" r="1.5" fill="#fff"/><circle cx="120" cy="20" r="1" fill="#fff"/><circle cx="170" cy="50" r="1.5" fill="#fff"/><circle cx="80" cy="60" r="1" fill="#fff"/><circle cx="30" cy="80" r="1" fill="#fff"/><path d="M20,150 Q60,40 100,120 Q140,40 180,150" stroke="#00ff88" stroke-width="6" fill="none" opacity="0.7"/><path d="M30,160 Q70,60 110,130 Q150,60 190,160" stroke="#00ccff" stroke-width="4" fill="none" opacity="0.5"/><polygon points="0,200 40,130 80,200" fill="#16213e"/><polygon points="60,200 120,110 180,200" fill="#1a1a3e"/><polygon points="140,200 190,140 200,200" fill="#16213e"/></svg>`),
+  NATURE('flowers', 'حقل أزهار', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#74b9ff"/><circle cx="155" cy="40" r="25" fill="#fdcb6e"/><rect y="120" width="200" height="80" fill="#55a630"/><circle cx="40" cy="145" r="12" fill="#e17055"/><circle cx="40" cy="145" r="5" fill="#fdcb6e"/><circle cx="90" cy="155" r="14" fill="#e84393"/><circle cx="90" cy="155" r="6" fill="#fdcb6e"/><circle cx="145" cy="142" r="11" fill="#a29bfe"/><circle cx="145" cy="142" r="4" fill="#fdcb6e"/><circle cx="175" cy="160" r="10" fill="#e17055"/><circle cx="175" cy="160" r="4" fill="#fdcb6e"/><rect x="38" y="145" width="4" height="55" fill="#2d6a1e"/><rect x="87" y="155" width="4" height="45" fill="#2d6a1e"/><rect x="143" y="142" width="4" height="58" fill="#2d6a1e"/><rect x="173" y="160" width="4" height="40" fill="#2d6a1e"/></svg>`),
+  NATURE('desert', 'صحراء عند الغروب', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e17055"/><stop offset="50%" stop-color="#fdcb6e"/><stop offset="100%" stop-color="#e17055"/></linearGradient></defs><rect width="200" height="200" fill="url(#d)"/><circle cx="100" cy="80" r="35" fill="#fff3b0"/><ellipse cx="50" cy="160" rx="70" ry="25" fill="#d4a017"/><ellipse cx="160" cy="170" rx="80" ry="30" fill="#c68a00"/><ellipse cx="100" cy="185" rx="120" ry="20" fill="#b8860b"/><path d="M60,155 L65,110 L70,155" fill="#2d5016" stroke="#2d5016" stroke-width="3"/><path d="M65,130 L55,118" stroke="#2d5016" stroke-width="3"/><path d="M65,125 L75,115" stroke="#2d5016" stroke-width="3"/></svg>`),
+  NATURE('starry', 'سماء مرصّعة', `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><linearGradient id="st" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0a0a23"/><stop offset="100%" stop-color="#1e3a5f"/></linearGradient></defs><rect width="200" height="200" fill="url(#st)"/><circle cx="30" cy="30" r="1.5" fill="#fff"/><circle cx="70" cy="15" r="1" fill="#fff"/><circle cx="110" cy="40" r="2" fill="#fff"/><circle cx="150" cy="20" r="1" fill="#fff"/><circle cx="180" cy="55" r="1.5" fill="#fff"/><circle cx="20" cy="70" r="1" fill="#fff"/><circle cx="60" cy="55" r="1.5" fill="#fff"/><circle cx="130" cy="70" r="1" fill="#fff"/><circle cx="170" cy="85" r="1.5" fill="#fff"/><circle cx="45" cy="95" r="1" fill="#fff"/><circle cx="90" cy="35" r="2.5" fill="#ffeaa7"/><circle cx="90" cy="35" r="8" fill="#ffeaa7" opacity="0.2"/><polygon points="0,200 50,130 100,200" fill="#0d1b2a"/><polygon points="70,200 130,110 190,200" fill="#1b2838"/><polygon points="150,200 195,140 200,200" fill="#0d1b2a"/></svg>`),
+];
 
 function Section({ title, description, children }) {
   return (
@@ -54,6 +69,56 @@ export default function Settings() {
   const [deletePw, setDeletePw] = useState('');
   const [deleteMsg, setDeleteMsg] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  /* ------------------------------------------------------- email confirm */
+  const [confirmStep, setConfirmStep] = useState(1);
+  const [confirmOtp, setConfirmOtp] = useState('');
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmMsg, setConfirmMsg] = useState(null);
+  const [confirmCooldown, setConfirmCooldown] = useState(0);
+
+  const startConfirmCooldown = () => {
+    setConfirmCooldown(60);
+    const iv = setInterval(() => {
+      setConfirmCooldown((s) => {
+        if (s <= 1) { clearInterval(iv); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const sendConfirmOtp = async () => {
+    setConfirmBusy(true);
+    setConfirmMsg(null);
+    try {
+      await confirmEmailApi.send();
+      setConfirmStep(2);
+      startConfirmCooldown();
+      setConfirmMsg({ type: 'success', text: 'أُرسل رمز التحقق إلى بريدك الإلكتروني.' });
+    } catch (err) {
+      setConfirmMsg({ type: 'error', text: err.message });
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const verifyConfirmOtp = async (e) => {
+    e.preventDefault();
+    setConfirmBusy(true);
+    setConfirmMsg(null);
+    try {
+      await confirmEmailApi.verify(confirmOtp);
+      setConfirmMsg({ type: 'success', text: 'تم تأكيد بريدك الإلكتروني بنجاح!' });
+      setConfirmStep(1);
+      setConfirmOtp('');
+      const fresh = await reload();
+      if (fresh) setUser(fresh);
+    } catch (err) {
+      setConfirmMsg({ type: 'error', text: err.message });
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
 
   useEffect(() => {
     setProfile({ name: user?.name || '', bio: user?.bio || '', avatar: user?.avatar || '' });
@@ -238,13 +303,14 @@ export default function Settings() {
             />
 
             <div className="preset-row">
-              {PRESETS.map((url) => (
+              {PRESETS.map(({ url, label }) => (
                 <button
-                  key={url}
+                  key={label}
                   type="button"
+                  title={label}
                   className={`preset${profile.avatar === url ? ' preset--active' : ''}`}
                   onClick={() => setProfile((p) => ({ ...p, avatar: url }))}
-                  aria-label="اختيار صورة جاهزة"
+                  aria-label={`اختيار صورة: ${label}`}
                 >
                   <Avatar src={url} name={profile.name} size={44} />
                 </button>
@@ -268,6 +334,82 @@ export default function Settings() {
             </div>
           </form>
         </div>
+      </Section>
+
+      <Section
+        title="تأكيد البريد الإلكتروني"
+        description="أكّد بريدك الإلكتروني لتأمين حسابك واستعادة كلمة المرور."
+      >
+        {user?.isVerified ? (
+          <div className="row-between">
+            <div>
+              <p>
+                <strong>بريدك الإلكتروني مُؤكَّد ✅</strong>
+              </p>
+              <p className="muted">{user?.email}</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {confirmMsg && (
+              <Alert type={confirmMsg.type === 'error' ? 'error' : 'success'}>
+                {confirmMsg.text}
+              </Alert>
+            )}
+            {confirmStep === 1 ? (
+              <div className="row-between">
+                <div>
+                  <p>
+                    <strong>بريدك غير مُؤكَّد بعد</strong>
+                  </p>
+                  <p className="muted">
+                    سنرسل رمز تحقق من 6 أرقام إلى {user?.email}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={sendConfirmOtp}
+                  disabled={confirmBusy}
+                >
+                  {confirmBusy ? 'جارٍ الإرسال…' : 'إرسال رمز التحقق'}
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={verifyConfirmOtp} className="form-narrow">
+                <Field
+                  label="رمز التحقق (6 أرقام)"
+                  name="confirmOtp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className="ltr text-center"
+                  value={confirmOtp}
+                  onChange={(e) => setConfirmOtp(e.target.value.replace(/\D/g, ''))}
+                  required
+                  autoFocus
+                />
+                <div className="form-actions">
+                  <button
+                    type="submit"
+                    className="btn btn--primary"
+                    disabled={confirmBusy || confirmOtp.length !== 6}
+                  >
+                    {confirmBusy ? 'جارٍ التحقق…' : 'تأكيد'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={sendConfirmOtp}
+                    disabled={confirmBusy || confirmCooldown > 0}
+                  >
+                    {confirmCooldown > 0 ? `إعادة الإرسال (${confirmCooldown}s)` : 'إعادة الإرسال'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
       </Section>
 
       <Section

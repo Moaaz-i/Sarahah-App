@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "3f6a1c92-8d4e-4b7a-9c15-2e7b4d0a6f31",
-    "name": "Sar7ny API (صريحني)",
+    "name": "Sar7ny API (صارحني)",
     "description": "Backend for the **Sar7ny** anonymous messaging app.\n\n**Base URL** `{{baseUrl}}` — all endpoints live under `/api/v1`.\n\n---\n\n### Getting started\n\n1. `npm run dev` (see README §5).\n2. Run **01 Auth → Register**; `accessToken`, `refreshToken`, `userId` and `username` are stored automatically as collection variables by the response scripts.\n3. Requests marked with bearer auth now work. Set `recipientUsername` to another account to receive messages and `messageId` / `reportId` / `targetUserId` from the responses you get.\n\n---\n\n### Conventions\n\n- **Success**: `{\"success\": true, \"message\": \"...\", \"data\": {...}}`\n- **Error**: `{\"success\": false, \"message\": \"...\", \"code\": \"ERROR_CODE\", \"requestId\": \"...\"}` (`details` appears for validation errors)\n- Rate limits default to 300 global / 20 auth / 10 messages / 10 reports / 5 password per 15 minutes, per IP. Set `RATE_LIMIT_ENABLED=false` in `.env` while testing if you keep hitting `429 RATE_LIMITED`.\n- Unknown fields are rejected, and `$`-operators / dotted keys are stripped from input (NoSQL-injection hardening).\n\n---\n\n**Google OAuth (folder 02)** needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` to be set in `.env`; see README §10. It has not been exercised against Google's servers with real credentials.\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

@@ -1,20 +1,21 @@
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
-import { AuthProvider, useAuth } from './lib/auth.jsx';
-import { ToastProvider } from './components/Toast.jsx';
-import AppShell from './components/AppShell.jsx';
-import ProtectedRoute from './components/ProtectedRoute.jsx';
-import Spinner from './components/Spinner.jsx';
+import { useEffect } from "react";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import AppShell from "./components/AppShell.jsx";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import Spinner from "./components/Spinner.jsx";
+import { ToastProvider } from "./components/Toast.jsx";
+import { AuthProvider, useAuth } from "./lib/auth.jsx";
 
-import Home from './pages/Home.jsx';
-import Profile from './pages/Profile.jsx';
-import Login from './pages/Login.jsx';
-import Register from './pages/Register.jsx';
-import Inbox from './pages/Inbox.jsx';
-import Settings from './pages/Settings.jsx';
-import Admin from './pages/Admin.jsx';
-import GoogleCallback from './pages/GoogleCallback.jsx';
-import NotFound from './pages/NotFound.jsx';
+import Admin from "./pages/Admin.jsx";
+import ForgotPassword from "./pages/ForgotPassword.jsx";
+import GoogleCallback from "./pages/GoogleCallback.jsx";
+import Home from "./pages/Home.jsx";
+import Inbox from "./pages/Inbox.jsx";
+import Login from "./pages/Login.jsx";
+import NotFound from "./pages/NotFound.jsx";
+import Profile from "./pages/Profile.jsx";
+import Register from "./pages/Register.jsx";
+import Settings from "./pages/Settings.jsx";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -27,7 +28,7 @@ function ScrollToTop() {
 function Splash() {
   return (
     <div className="splash">
-      <Spinner label="جارٍ تحميل صريحني…" />
+      <Spinner label="جارٍ تحميل صارحني…" />
     </div>
   );
 }
@@ -56,7 +57,11 @@ export default function App() {
                 <Route path="u/:username" element={<Profile />} />
                 <Route path="login" element={<Login />} />
                 <Route path="register" element={<Register />} />
-                <Route path="auth/google/callback" element={<GoogleCallback />} />
+                <Route path="forgot-password" element={<ForgotPassword />} />
+                <Route
+                  path="auth/google/callback"
+                  element={<GoogleCallback />}
+                />
                 <Route
                   path="inbox"
                   element={

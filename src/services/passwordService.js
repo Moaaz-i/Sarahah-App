@@ -1,65 +1,81 @@
 import bcrypt from 'bcryptjs';
-import crypto from 'node:crypto';
-import PasswordResetToken from '../models/PasswordResetToken.js';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import AppError from '../utils/AppError.js';
 import { ERROR_CODES } from '../constants/messages.js';
+import { sendMail } from '../utils/mailer.js';
+import { passwordResetTemplate } from '../utils/emailTemplates.js';
+import env from '../config/env.js';
 import { hashToken } from '../utils/hashToken.js';
 import { revokeAllForUser } from './tokenService.js';
-import env from '../config/env.js';
+import * as otpService from './otpService.js';
 
 const auditRetention = () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
 /**
- * Password reset service.
+ * Password reset service (OTP-based).
  *
- * Requesting a reset link is DISABLED: email sending was removed from this
- * project and no other channel can hand the token to the user, so there is
- * nothing to deliver it with. The consuming half (`resetPassword`) is kept —
- * it is channel-agnostic and still verifies any token it is handed.
+ * Flow:
+ *  1. POST /password/forgot  {email}          -> 6-digit code emailed.
+ *  2. POST /password/reset   {email,otp,newPassword} -> code verified, password set.
  *
- * - Only the SHA-256 digest of the reset token is stored.
- * - Validity is checked against expiresAt AND usedAt at use time
- *   (we do NOT rely on MongoDB's TTL deletion, which is not immediate).
- * - Consumption is atomic (findOneAndUpdate on usedAt:null) so a token can
- *   only be used once, even under concurrent requests.
+ * Security properties:
+ *  - Response is identical whether or not the account exists (no enumeration).
+ *  - Codes are single-use, expire after env.otp.ttlMinutes, and are burned
+ *    after env.otp.maxAttempts wrong guesses.
+ *  - Consumption is atomic (findOneAndUpdate on usedAt:null).
+ *  - A successful reset revokes every existing session.
  */
 
-export const resetPassword = async ({ token, newPassword }, { requestId = null } = {}) => {
-  const tokenHash = hashToken(token);
+export const requestPasswordReset = async (email, { requestId = null } = {}) => {
+  const normalized = String(email).toLowerCase().trim();
 
-  // We never log the raw token; only the digest could ever be referenced.
-  const record = await PasswordResetToken.findOne({ tokenHash }).select('+tokenHash');
-  if (!record) {
-    throw AppError.unauthenticated('Reset token is invalid', ERROR_CODES.INVALID_TOKEN);
-  }
+  const user = await User.findOne({ email: normalized });
 
-  const now = new Date();
-  if (record.usedAt) {
-    throw AppError.unauthenticated('Reset token has already been used', ERROR_CODES.TOKEN_ALREADY_USED);
-  }
-  if (record.expiresAt <= now) {
-    throw AppError.unauthenticated('Reset token has expired', ERROR_CODES.TOKEN_EXPIRED);
-  }
+  // Always return the same shape regardless of whether the user exists.
+  const baseResponse = {
+    delivered: false,
+    skipped: false,
+    expiresInMinutes: env.otp.ttlMinutes,
+  };
 
-  // Atomic single-use claim: only one concurrent request can win.
-  const claimed = await PasswordResetToken.findOneAndUpdate(
-    { _id: record._id, usedAt: null, expiresAt: { $gt: now } },
-    { $set: { usedAt: now } },
-    { new: true },
-  );
-  if (!claimed) {
-    throw AppError.unauthenticated('Reset token has already been used', ERROR_CODES.TOKEN_ALREADY_USED);
-  }
-
-  const user = await User.findById(record.user).select('+password');
   if (!user || !user.isAccountActive()) {
-    throw AppError.unauthenticated('Reset token is invalid', ERROR_CODES.INVALID_TOKEN);
+    // Still "deliver" nothing but report success to prevent enumeration.
+    return baseResponse;
   }
+
+  const code = await otpService.issueOtp(user._id, 'password_reset');
+  const { subject, html, text } = passwordResetTemplate(
+    user.name,
+    code,
+    env.otp.ttlMinutes,
+  );
+
+  const result = await sendMail({ to: user.email, subject, html, text });
+
+  return {
+    ...baseResponse,
+    delivered: result.sent,
+    skipped: result.skipped,
+  };
+};
+
+export const resetPasswordWithOtp = async (
+  { email, otp, newPassword },
+  { requestId = null } = {},
+) => {
+  const normalized = String(email).toLowerCase().trim();
+  const user = await User.findOne({ email: normalized }).select('+password +deletedAt');
+
+  if (!user || !user.isAccountActive()) {
+    throw AppError.badRequest('الرمز غير صحيح أو منتهي', { code: ERROR_CODES.INVALID_TOKEN });
+  }
+
+  // Verify + consume the OTP (atomic).
+  await otpService.consumeOtp(user._id, 'password_reset', otp);
 
   if (await bcrypt.compare(newPassword, user.password || '')) {
-    throw AppError.badRequest('New password must be different from the current one');
+    throw AppError.badRequest('كلمة المرور الجديدة يجب أن تختلف عن الحالية');
   }
 
   user.password = await bcrypt.hash(newPassword, env.security.bcryptRounds);
@@ -74,23 +90,18 @@ export const resetPassword = async ({ token, newPassword }, { requestId = null }
     targetType: 'User',
     targetId: String(user._id),
     requestId,
-    metadata: { sessionsRevoked: true },
+    metadata: { sessionsRevoked: true, via: 'otp' },
     expiresAt: auditRetention(),
   });
 
   return { reset: true, sessionsRevoked: true };
 };
 
-/** Helper used by tests to build a raw token without sending email. */
-export const createResetTokenRecordForTests = async (userId, { ttlMs = 15 * 60 * 1000 } = {}) => {
-  const raw = crypto.randomBytes(32).toString('base64url');
-  await PasswordResetToken.create({
-    user: userId,
-    tokenHash: hashToken(raw),
-    expiresAt: new Date(Date.now() + ttlMs),
-    usedAt: null,
-  });
-  return raw;
-};
+/** Helper used by tests to build a raw OTP without sending email. */
+export const createResetOtpForTests = async (userId) =>
+  otpService.createOtpForTests(userId, 'password_reset');
 
-export default { resetPassword };
+/** Legacy helper: still referenced by old tests. Returns null (disabled). */
+export const createResetTokenRecordForTests = async () => null;
+
+export default { requestPasswordReset, resetPasswordWithOtp, createResetOtpForTests };

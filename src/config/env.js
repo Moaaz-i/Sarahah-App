@@ -110,6 +110,28 @@ export const env = Object.freeze({
 
   corsOrigins: csv(process.env.CLIENT_ORIGIN),
 
+  smtp: Object.freeze({
+    /** Host/port come from .env; empty host disables sending entirely. */
+    host: process.env.SMTP_HOST || '',
+    port: int(process.env.SMTP_PORT, 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.MAIL_FROM || 'Sar7ny <no-reply@sarhny.local>',
+    /** True only when every required piece is present. */
+    get enabled() {
+      return Boolean(this.host && this.user && this.pass);
+    },
+  }),
+
+  otp: Object.freeze({
+    /** 6-digit numeric codes. */
+    length: int(process.env.OTP_LENGTH, 6),
+    ttlMinutes: int(process.env.OTP_TTL_MINUTES, 15),
+    /** Max wrong attempts before the code is burned. */
+    maxAttempts: int(process.env.OTP_MAX_ATTEMPTS, 5),
+  }),
+
 
   security: Object.freeze({
     bcryptRounds: int(process.env.BCRYPT_ROUNDS, 10),

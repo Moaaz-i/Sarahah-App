@@ -1,8 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../lib/auth.jsx';
-import { useToast } from './Toast.jsx';
-import Avatar from './Avatar.jsx';
+import { useEffect, useRef, useState } from "react";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import { useAuth } from "../lib/auth.jsx";
+import Avatar from "./Avatar.jsx";
+import { useToast } from "./Toast.jsx";
 
 function UserMenu() {
   const { user, signOut } = useAuth();
@@ -16,20 +22,20 @@ function UserMenu() {
     const onDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
-    const onKey = (e) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
   const handleSignOut = async () => {
     setOpen(false);
     await signOut();
-    toast.success('تم تسجيل الخروج');
-    navigate('/');
+    toast.success("تم تسجيل الخروج");
+    navigate("/");
   };
 
   return (
@@ -41,7 +47,12 @@ function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <Avatar src={user.avatar} name={user.name} username={user.username} size={34} />
+        <Avatar
+          src={user.avatar}
+          name={user.name}
+          username={user.username}
+          size={34}
+        />
         <span className="usermenu__name">{user.name}</span>
         <span className="usermenu__caret" aria-hidden="true">
           ▾
@@ -54,13 +65,28 @@ function UserMenu() {
             <strong>{user.name}</strong>
             <span>@{user.username}</span>
           </div>
-          <Link className="usermenu__item" to="/settings" role="menuitem" onClick={() => setOpen(false)}>
+          <Link
+            className="usermenu__item"
+            to="/settings"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
             الإعدادات
           </Link>
-          <Link className="usermenu__item" to={`/u/${user.username}`} role="menuitem" onClick={() => setOpen(false)}>
+          <Link
+            className="usermenu__item"
+            to={`/u/${user.username}`}
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
             صفحتي العامة
           </Link>
-          <button type="button" className="usermenu__item usermenu__item--danger" role="menuitem" onClick={handleSignOut}>
+          <button
+            type="button"
+            className="usermenu__item usermenu__item--danger"
+            role="menuitem"
+            onClick={handleSignOut}
+          >
             تسجيل الخروج
           </button>
         </div>
@@ -81,7 +107,7 @@ export default function AppShell() {
             <span className="brand__mark" aria-hidden="true">
               ص
             </span>
-            <span className="brand__text">صريحني</span>
+            <span className="brand__text">صارحني</span>
           </Link>
 
           <nav className="nav" aria-label="التنقل الرئيسي">
@@ -89,7 +115,7 @@ export default function AppShell() {
               الرئيسية
             </NavLink>
             {user && <NavLink to="/inbox">الوارد</NavLink>}
-            {user?.role === 'admin' && <NavLink to="/admin">الإدارة</NavLink>}
+            {user?.role === "admin" && <NavLink to="/admin">الإدارة</NavLink>}
             {user && <NavLink to="/settings">الإعدادات</NavLink>}
           </nav>
 
@@ -117,7 +143,7 @@ export default function AppShell() {
 
       <footer className="footer">
         <p>
-          <strong>صريحني</strong> — رسائل تُرسل من دون كشف هوية المرسل.
+          <strong>صارحني</strong> — رسائل تُرسل من دون كشف هوية المرسل.
         </p>
         <p className="footer__muted">
           لا يخزّن الخادم اسمك ولا عنوان IP ولا وكيل المستخدم مع الرسالة.

@@ -6,8 +6,7 @@ import { forgotPasswordSchema, resetPasswordSchema } from '../validators/passwor
 
 const router = Router();
 
-// POST /api/v1/password/forgot — DISABLED (503); still strictly rate limited
-// so it cannot be used to probe the API.
+// POST /api/v1/password/forgot — send a 6-digit OTP to the account email.
 router.post(
   '/forgot',
   passwordLimiter(),
@@ -15,7 +14,7 @@ router.post(
   passwordController.forgotPassword,
 );
 
-// POST /api/v1/password/reset
+// POST /api/v1/password/reset — verify the OTP and set the new password.
 router.post(
   '/reset',
   passwordLimiter(),

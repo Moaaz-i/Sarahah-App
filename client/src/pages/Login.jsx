@@ -112,7 +112,9 @@ export default function Login() {
         <GoogleButton emailHint={form.identifier.includes('@') ? form.identifier : ''} />
 
         <footer className="auth-card__foot">
-          {/* استعادة كلمة المرور معطّلة حاليًا: لا توجد قناة إرسال (البريد حُذف). */}
+          <span>
+            <Link to="/forgot-password">نسيت كلمة المرور؟</Link>
+          </span>
           <span>
             ليس لديك حساب؟ <Link to="/register">أنشئ واحدًا</Link>
           </span>

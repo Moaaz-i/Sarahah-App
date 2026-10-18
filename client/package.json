@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Sar7ny (صريحني) web client — Vite + React",
+  "description": "Sar7ny (صارحني) web client — Vite + React",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

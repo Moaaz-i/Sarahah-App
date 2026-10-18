@@ -11,7 +11,7 @@ import { initials } from '../lib/format.js';
  */
 export default function Avatar({ src, name = '', size = 40, username = '' }) {
   const [failed, setFailed] = useState(false);
-  const usable = !failed && /^https?:\/\//i.test(src || '');
+  const usable = !failed && (/^https?:\/\//i.test(src || '') || /^data:image\//i.test(src || ''));
 
   return (
     <span

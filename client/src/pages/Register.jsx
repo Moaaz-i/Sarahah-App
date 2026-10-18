@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../lib/auth.jsx';
-import { ApiError } from '../lib/api.js';
-import { useToast } from '../components/Toast.jsx';
-import Field from '../components/Field.jsx';
-import Alert from '../components/Alert.jsx';
+import Alert from "../components/Alert.jsx";
+import Field from "../components/Field.jsx";
 import GoogleButton from '../components/GoogleButton.jsx';
+import { useToast } from "../components/Toast.jsx";
+import { ApiError } from "../lib/api.js";
+import { useAuth } from "../lib/auth.jsx";
 
 const RULES = [
   { test: (v) => v.length >= 8, label: '8 أحرف على الأقل' },
@@ -39,7 +39,7 @@ export default function Register() {
     setBusy(true);
     try {
       await register(form);
-      toast.success('مرحبًا بك في صريحني');
+      toast.success("مرحبًا بك في صارحني");
       navigate('/inbox', { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {

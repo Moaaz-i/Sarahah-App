@@ -5,6 +5,7 @@ import userRoutes from './userRoutes.js';
 import messageRoutes from './messageRoutes.js';
 import reportRoutes from './reportRoutes.js';
 import passwordRoutes from './passwordRoutes.js';
+import confirmEmailRoutes from './confirmEmailRoutes.js';
 import adminRoutes from './adminRoutes.js';
 
 /** All API routers, mounted under /api/v1 in app.js. */
@@ -18,6 +19,7 @@ apiRouter.use('/users', userRoutes);
 apiRouter.use('/messages', messageRoutes);
 apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/password', passwordRoutes);
+apiRouter.use('/confirm-email', confirmEmailRoutes);
 apiRouter.use('/admin', adminRoutes);
 
 export default apiRouter;

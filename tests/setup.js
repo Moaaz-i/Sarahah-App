@@ -19,6 +19,16 @@ process.env.BCRYPT_ROUNDS = '4'; // fast hashing for tests
 process.env.RATE_LIMIT_ENABLED = 'false'; // enabled explicitly in the security test
 process.env.FINGERPRINT_SALT = 'test_fingerprint_salt';
 
+// SMTP: leave empty so mailer.sendMail() returns {skipped:true} in tests.
+process.env.SMTP_HOST = '';
+process.env.SMTP_USER = '';
+process.env.SMTP_PASS = '';
+
+// OTP settings for tests (short codes for easy debugging).
+process.env.OTP_LENGTH = '6';
+process.env.OTP_TTL_MINUTES = '15';
+process.env.OTP_MAX_ATTEMPTS = '5';
+
 // Google OAuth: the feature is exercised with an injected fake client, so no
 // test ever contacts Google. Only the presence of these values matters.
 process.env.GOOGLE_CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
