@@ -115,6 +115,7 @@ export default function AppShell() {
               الرئيسية
             </NavLink>
             {user && <NavLink to="/inbox">الوارد</NavLink>}
+            {user && <NavLink to="/mirror">المرآة</NavLink>}
             {user?.role === "admin" && <NavLink to="/admin">الإدارة</NavLink>}
             {user && <NavLink to="/settings">الإعدادات</NavLink>}
           </nav>

@@ -218,6 +218,7 @@ export async function api(path, options = {}) {
 export const get = (path, options) => api(path, { ...options, method: 'GET' });
 export const post = (path, body, options) => api(path, { ...options, method: 'POST', body });
 export const patch = (path, body, options) => api(path, { ...options, method: 'PATCH', body });
+export const put = (path, body, options) => api(path, { ...options, method: 'PUT', body });
 export const del = (path, body, options) => api(path, { ...options, method: 'DELETE', body });
 
 /* --------------------------------------------------------------------- auth */
@@ -265,17 +266,53 @@ export const usersApi = {
 export const messagesApi = {
   send: (username, content) =>
     post(`/messages/${encodeURIComponent(username)}`, content, { auth: false }),
-  inbox: ({ limit = 20, cursor, isRead, isArchived } = {}) => {
+  inbox: ({ limit = 20, cursor, isRead, isArchived, category, quarantined } = {}) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (cursor) qs.set('cursor', cursor);
     if (isRead !== undefined) qs.set('isRead', String(isRead));
     if (isArchived !== undefined) qs.set('isArchived', String(isArchived));
+    if (category) qs.set('category', category);
+    // Absent = the normal inbox; `true` = the quarantine section only.
+    if (quarantined) qs.set('quarantined', 'true');
     return get(`/messages?${qs}`);
   },
+  counts: () => get('/messages/counts'),
   get: (id) => get(`/messages/${id}`),
   markRead: (id) => patch(`/messages/${id}/read`),
   archive: (id, archived) => patch(`/messages/${id}/archive`, { archived }),
+  /** Recipient override: let a shield-flagged message through. */
+  release: (id) => patch(`/messages/${id}/release`),
   remove: (id) => del(`/messages/${id}`),
+};
+
+/**
+ * The "useful honesty" layer: reception policy, guided prompts, the feedback
+ * mirror, and personal goals. All authenticated and scoped to the caller.
+ */
+export const receptionApi = {
+  get: () => get('/reception'),
+  update: (body) => put('/reception', body),
+  replacePrompts: (prompts) => put('/reception/prompts', { prompts }),
+};
+
+export const mirrorApi = {
+  /** @param {'30d'|'90d'|'all'} period */
+  get: (period = '30d') => get(`/mirror?period=${encodeURIComponent(period)}`),
+};
+
+export const goalsApi = {
+  list: ({ status, limit } = {}) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (limit) qs.set('limit', String(limit));
+    const query = qs.toString();
+    return get(`/goals${query ? `?${query}` : ''}`);
+  },
+  create: (body) => post('/goals', body),
+  get: (id) => get(`/goals/${id}`),
+  update: (id, body) => patch(`/goals/${id}`, body),
+  remove: (id) => del(`/goals/${id}`),
+  due: () => get('/goals/due'),
 };
 
 export const reportsApi = {

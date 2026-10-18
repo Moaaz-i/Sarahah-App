@@ -5,7 +5,12 @@ import { fingerprintFromRequest } from '../utils/hashToken.js';
 /** POST /api/v1/messages/:username — anonymous, no auth required. */
 export const sendMessage = asyncHandler(async (req, res) => {
   const result = await messageService.sendMessage(
-    { username: req.params.username, content: req.body.content },
+    {
+      username: req.params.username,
+      content: req.body.content,
+      category: req.body.category,
+      promptId: req.body.promptId,
+    },
     { fingerprint: fingerprintFromRequest(req) },
   );
 
@@ -18,19 +23,35 @@ export const sendMessage = asyncHandler(async (req, res) => {
 
 /** GET /api/v1/messages — own inbox, cursor pagination + filters. */
 export const listMessages = asyncHandler(async (req, res) => {
-  const { limit, cursor, isRead, isArchived } = req.query;
+  const { limit, cursor, isRead, isArchived, category, quarantined } = req.query;
 
   const result = await messageService.listMessages(req.user._id, {
     limit,
     cursor,
     isRead,
     isArchived,
+    category,
+    quarantined,
   });
 
   res.status(200).json({
     success: true,
     message: 'Messages fetched successfully',
-    data: result,
+    data: {
+      ...result,
+      messages: result.messages.map(messageService.presentMessage),
+    },
+  });
+});
+
+/** GET /api/v1/messages/counts — unread / total / quarantined, for the header. */
+export const counts = asyncHandler(async (req, res) => {
+  const data = await messageService.inboxCounts(req.user._id);
+
+  res.status(200).json({
+    success: true,
+    message: 'Inbox counts fetched',
+    data,
   });
 });
 
@@ -41,7 +62,7 @@ export const getMessage = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Message fetched successfully',
-    data: result,
+    data: { message: messageService.presentMessage(result.message) },
   });
 });
 
@@ -52,7 +73,7 @@ export const markRead = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Message marked as read',
-    data: result,
+    data: { message: messageService.presentMessage(result.message) },
   });
 });
 
@@ -63,7 +84,18 @@ export const archiveMessage = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: req.body.archived ? 'Message archived' : 'Message unarchived',
-    data: result,
+    data: { message: messageService.presentMessage(result.message) },
+  });
+});
+
+/** PATCH /api/v1/messages/:id/release — recipient overrides the shield. */
+export const releaseMessage = asyncHandler(async (req, res) => {
+  const result = await messageService.releaseMessage(req.user._id, req.params.id);
+
+  res.status(200).json({
+    success: true,
+    message: 'Message released into your inbox',
+    data: { message: messageService.presentMessage(result.message) },
   });
 });
 
@@ -78,4 +110,13 @@ export const deleteMessage = asyncHandler(async (req, res) => {
   });
 });
 
-export default { sendMessage, listMessages, getMessage, markRead, archiveMessage, deleteMessage };
+export default {
+  sendMessage,
+  listMessages,
+  counts,
+  getMessage,
+  markRead,
+  archiveMessage,
+  releaseMessage,
+  deleteMessage,
+};

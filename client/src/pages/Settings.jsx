@@ -7,6 +7,7 @@ import Field from '../components/Field.jsx';
 import Alert from '../components/Alert.jsx';
 import Avatar from '../components/Avatar.jsx';
 import Modal from '../components/Modal.jsx';
+import ReceptionSettings from '../components/ReceptionSettings.jsx';
 
 /**
  * Public avatar URLs the backend will happily store (it never fetches them).
@@ -334,6 +335,13 @@ export default function Settings() {
             </div>
           </form>
         </div>
+      </Section>
+
+      <Section
+        title="استقبال الملاحظات"
+        description="قواعدك أنت لما يصل إليك. تغيّرها لا يمسّ حسابك ولا رسائلك."
+      >
+        <ReceptionSettings />
       </Section>
 
       <Section

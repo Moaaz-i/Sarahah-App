@@ -97,6 +97,7 @@ export default function Profile() {
           <SendMessageForm
             username={profile.username}
             displayName={profile.name}
+            policy={profile.policy ?? null}
           />
         </section>
       )}

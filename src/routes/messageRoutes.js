@@ -25,6 +25,9 @@ router.post(
 // the caller's own messages.
 router.get('/', authMiddleware, validate({ query: listMessagesQuerySchema }), messageController.listMessages);
 
+// Declared BEFORE /:id — otherwise "counts" would be read as a message id.
+router.get('/counts', authMiddleware, messageController.counts);
+
 router.get('/:id', authMiddleware, validate({ params: messageIdParamSchema }), messageController.getMessage);
 
 router.patch(
@@ -39,6 +42,14 @@ router.patch(
   authMiddleware,
   validate({ params: messageIdParamSchema, body: archiveMessageSchema }),
   messageController.archiveMessage,
+);
+
+// Recipient override: let a shield-flagged message through.
+router.patch(
+  '/:id/release',
+  authMiddleware,
+  validate({ params: messageIdParamSchema }),
+  messageController.releaseMessage,
 );
 
 router.delete(

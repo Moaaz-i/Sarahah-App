@@ -94,6 +94,88 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    /**
+     * Reception policy: the recipient's own rules for what reaches them.
+     * This is a product feature, not a security boundary — the security
+     * boundary is that a sender is never stored.
+     */
+    reception: {
+      /** Pause the inbox without deleting the account. */
+      isPaused: {
+        type: Boolean,
+        default: false,
+      },
+
+      /** Human-readable reason shown to senders while paused. */
+      pauseReason: {
+        type: String,
+        trim: true,
+        maxlength: [200, 'Pause reason cannot exceed 200 characters'],
+        default: '',
+      },
+
+      /**
+       * Categories the recipient wants. Empty array means "everything",
+       * which is also the default — a new user is never silently filtered.
+       */
+      allowedCategories: {
+        type: [String],
+        default: [],
+      },
+
+      /** Public policy text shown to senders before they write. */
+      policyMessage: {
+        type: String,
+        trim: true,
+        maxlength: [400, 'Policy message cannot exceed 400 characters'],
+        default: '',
+      },
+
+      /** Ask senders to pick a category before writing. */
+      requireCategory: {
+        type: Boolean,
+        default: false,
+      },
+
+      /** Show the pre-send kindness nudge when the shield flags the text. */
+      enableShield: {
+        type: Boolean,
+        default: true,
+      },
+
+      /** Auto-quarantine flagged messages instead of showing them inline. */
+      quarantineFlagged: {
+        type: Boolean,
+        default: true,
+      },
+    },
+
+    /**
+     * Guided-honesty prompts: questions the owner publishes on their page so
+     * senders answer something useful instead of staring at a blank box.
+     */
+    prompts: [
+      {
+        _id: false,
+        id: {
+          type: String,
+          required: true,
+          maxlength: 64,
+        },
+        text: {
+          type: String,
+          required: true,
+          trim: true,
+          minlength: [3, 'Prompt text must be at least 3 characters'],
+          maxlength: [160, 'Prompt text cannot exceed 160 characters'],
+        },
+        isActive: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
+
     /** Soft-delete marker; personal data is wiped at delete time (see userService). */
     deletedAt: {
       type: Date,

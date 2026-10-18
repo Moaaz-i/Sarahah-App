@@ -12,6 +12,7 @@ import GoogleCallback from "./pages/GoogleCallback.jsx";
 import Home from "./pages/Home.jsx";
 import Inbox from "./pages/Inbox.jsx";
 import Login from "./pages/Login.jsx";
+import Mirror from "./pages/Mirror.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import Profile from "./pages/Profile.jsx";
 import Register from "./pages/Register.jsx";
@@ -67,6 +68,14 @@ export default function App() {
                   element={
                     <ProtectedRoute>
                       <Inbox />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="mirror"
+                  element={
+                    <ProtectedRoute>
+                      <Mirror />
                     </ProtectedRoute>
                   }
                 />

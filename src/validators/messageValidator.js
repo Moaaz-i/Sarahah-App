@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MESSAGE_CATEGORY_VALUES } from '../constants/feedback.js';
 
 const objectId = z
   .string({ required_error: 'id is required' })
@@ -8,6 +9,12 @@ const objectId = z
 const booleanFlag = z
   .enum(['true', 'false'])
   .transform((v) => v === 'true');
+
+/** Optional boolean flag that may be absent entirely. */
+const optionalFlag = z
+  .enum(['true', 'false'])
+  .transform((v) => v === 'true')
+  .optional();
 
 /** POST /messages/:username */
 export const sendMessageParamsSchema = z
@@ -29,6 +36,20 @@ export const sendMessageSchema = z
       .trim()
       .min(1, 'message cannot be empty')
       .max(2000, 'message cannot exceed 2000 characters'),
+
+    /** Sender's declared intent. Falls back to `general` on the server. */
+    category: z
+      .enum(MESSAGE_CATEGORY_VALUES, {
+        errorMap: () => ({ message: `category must be one of: ${MESSAGE_CATEGORY_VALUES.join(', ')}` }),
+      })
+      .optional(),
+
+    /** Which guided prompt the sender answered, if any. */
+    promptId: z
+      .string()
+      .trim()
+      .max(64, 'invalid promptId')
+      .optional(),
   })
   .strict();
 
@@ -43,6 +64,17 @@ export const listMessagesQuerySchema = z
       .optional(),
     isRead: booleanFlag.optional(),
     isArchived: booleanFlag.optional(),
+    /** Filter by feedback category (the mirror's drill-down). */
+    category: z
+      .enum(MESSAGE_CATEGORY_VALUES, {
+        errorMap: () => ({ message: `category must be one of: ${MESSAGE_CATEGORY_VALUES.join(', ')}` }),
+      })
+      .optional(),
+    /**
+     * Tri-state: true = quarantine only, false = inbox only, absent = both.
+     * This is what lets one request power the "held for you" section.
+     */
+    quarantined: optionalFlag,
   })
   .strict();
 

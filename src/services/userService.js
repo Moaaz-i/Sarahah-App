@@ -8,6 +8,7 @@ import { ERROR_CODES } from '../constants/messages.js';
 import { toPublicUser, sanitizeUser } from '../utils/sanitizeUser.js';
 import env from '../config/env.js';
 import * as tokenService from './tokenService.js';
+import * as receptionService from './receptionService.js';
 
 const auditRetention = () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
@@ -20,7 +21,15 @@ export const getPublicProfile = async (username) => {
   });
 
   if (!user) throw AppError.notFound('User not found');
-  return { user: toPublicUser(user) };
+
+  const profile = toPublicUser(user);
+
+  // What the SENDER is allowed to know before writing: the owner's published
+  // reception policy and their guided prompts. Anything the owner did not
+  // publish (e.g. a private allow-list) stays private.
+  profile.policy = receptionService.presentPublicPolicy(user);
+
+  return { user: profile };
 };
 
 /** Update own profile. Only whitelisted fields reach the database. */

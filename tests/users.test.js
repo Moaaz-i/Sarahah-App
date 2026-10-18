@@ -20,6 +20,15 @@ describe('Users', () => {
         bio: 'hello there',
         avatar: '',
         createdAt: user.createdAt.toISOString(),
+        // Sender-visible reception policy: defaults publish nothing restrictive.
+        policy: {
+          isPaused: false,
+          pauseReason: '',
+          policyMessage: '',
+          requireCategory: false,
+          allowedCategories: null,
+          prompts: [],
+        },
       });
     });
 
