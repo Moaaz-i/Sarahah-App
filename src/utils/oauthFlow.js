@@ -82,6 +82,7 @@ export const createFlow = ({
   purpose = 'login',
   userId = null,
   codeVerifier = null,
+  isPopup = false,
   ttlMs,
 } = {}) => {
   const now = Date.now();
@@ -92,6 +93,7 @@ export const createFlow = ({
     s: randomToken(32), // state (CSRF)
     vf: codeVerifier || randomToken(48), // PKCE code_verifier
     n: randomToken(32), // OIDC nonce
+    pop: isPopup ? 1 : 0,
     i: now,
     e: now + (ttlMs ?? env.oauth.flowTtlMs),
   };

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import AppShell from "./components/AppShell.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import GuestRoute from "./components/GuestRoute.jsx";
 import Spinner from "./components/Spinner.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import { AuthProvider, useAuth } from "./lib/auth.jsx";
@@ -17,6 +18,7 @@ import NotFound from "./pages/NotFound.jsx";
 import Profile from "./pages/Profile.jsx";
 import Register from "./pages/Register.jsx";
 import Settings from "./pages/Settings.jsx";
+import Thread from "./pages/Thread.jsx";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -53,15 +55,36 @@ export default function App() {
           <ScrollToTop />
           <BootGate>
             <Routes>
+              {/* Standalone OAuth callback: never renders AppShell or loads app inside popups */}
+              <Route path="auth/google/callback" element={<GoogleCallback />} />
+
               <Route element={<AppShell />}>
                 <Route index element={<Home />} />
                 <Route path="u/:username" element={<Profile />} />
-                <Route path="login" element={<Login />} />
-                <Route path="register" element={<Register />} />
-                <Route path="forgot-password" element={<ForgotPassword />} />
+                <Route path="thread/:conversationKey" element={<Thread />} />
                 <Route
-                  path="auth/google/callback"
-                  element={<GoogleCallback />}
+                  path="login"
+                  element={
+                    <GuestRoute>
+                      <Login />
+                    </GuestRoute>
+                  }
+                />
+                <Route
+                  path="register"
+                  element={
+                    <GuestRoute>
+                      <Register />
+                    </GuestRoute>
+                  }
+                />
+                <Route
+                  path="forgot-password"
+                  element={
+                    <GuestRoute>
+                      <ForgotPassword />
+                    </GuestRoute>
+                  }
                 />
                 <Route
                   path="inbox"

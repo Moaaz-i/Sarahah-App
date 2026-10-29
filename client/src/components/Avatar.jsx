@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import { initials } from '../lib/format.js';
+import { resolveUploadUrl } from '../lib/api.js';
 
 /**
  * Avatar with graceful fallback:
- *   valid http(s) URL -> the image
- *   anything else     -> generated initials
+ *   absolute http(s) URL -> the image
+ *   data:image/...      -> the embedded image
+ *   /uploads/...        -> resolved against the API origin
+ *   anything else       -> generated initials
  *
  * The backend stores a URL string only (it never fetches or validates it),
  * so a dead link must degrade to initials rather than a broken image icon.
  */
 export default function Avatar({ src, name = '', size = 40, username = '' }) {
   const [failed, setFailed] = useState(false);
-  const usable = !failed && (/^https?:\/\//i.test(src || '') || /^data:image\//i.test(src || ''));
+  const usableSrc = resolveUploadUrl(src);
+  const usable =
+    !failed &&
+    (/^https?:\/\//i.test(usableSrc || '') || /^data:image\//i.test(usableSrc || ''));
 
   return (
     <span
@@ -20,7 +26,7 @@ export default function Avatar({ src, name = '', size = 40, username = '' }) {
       aria-hidden={!usable}
     >
       {usable ? (
-        <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+        <img src={usableSrc} alt="" loading="lazy" onError={() => setFailed(true)} />
       ) : (
         <span className="avatar__fallback">{initials(name || username)}</span>
       )}

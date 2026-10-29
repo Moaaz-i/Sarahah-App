@@ -19,6 +19,8 @@ const loginHint = z
 /** GET /api/v1/auth/google */
 export const startQuerySchema = z.object({
   login_hint: loginHint,
+  prompt: z.string().trim().max(50).optional(),
+  popup: z.string().trim().max(10).optional(),
 });
 
 /**

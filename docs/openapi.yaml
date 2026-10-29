@@ -21,6 +21,8 @@ tags:
   - name: Reports
   - name: Password
   - name: Admin
+  - name: Email Confirmation
+  - name: Feedback
 
 components:
   securitySchemes:
@@ -348,7 +350,9 @@ paths:
   /api/v1/auth/logout:
     post:
       tags: [Auth]
-      summary: Revoke every refresh token of the current user
+      summary: Logout from the current device
+      description: |
+        Revokes the active refresh token and blacklists the token in Redis.
       requestBody:
         required: false
         content:
@@ -358,7 +362,25 @@ paths:
               properties:
                 refreshToken: { type: string }
       responses:
-        '200': { description: Logged out }
+        '200': { description: Logged out successfully }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/logout-all:
+    post:
+      tags: [Auth]
+      summary: Logout from all devices
+      description: |
+        Revokes all refresh tokens, increments the user's tokenVersion (or updates passwordChangedAt),
+        and invalidates active sessions in Redis so all devices and browsers are signed out.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out from all devices successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /api/v1/auth/me:
@@ -393,7 +415,9 @@ paths:
         The redirect URI is taken from the environment only, never from the
         query string.
       parameters:
-        - { name: login_hint, in: query, required: false, schema: { type: string, maxLength: 254 } }
+        - { name: login_hint, in: query, required: false, schema: { type: string, maxLength: 254 }, description: 'Pre-filled Google email or sub' }
+        - { name: prompt, in: query, required: false, schema: { type: string, enum: [select_account, consent, none] }, description: 'Google consent screen behavior' }
+        - { name: popup, in: query, required: false, schema: { type: string, enum: ['0', '1'] }, description: '1 if the flow was initiated in a popup window' }
       responses:
         '302':
           description: Redirect to Google's consent screen; the flow cookie is set.
@@ -671,6 +695,53 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /api/v1/users/me/avatar:
+    patch:
+      tags: [Users]
+      summary: Upload a profile picture (image file)
+      description: |
+        Upload an avatar image file (`multipart/form-data`).
+        Accepted types: PNG, JPEG, GIF, WebP. Max 2 MB.
+        The file is verified by its magic bytes — a renamed script or HTML
+        file is refused. The stored reference (`/uploads/avatars/<uuid>.png`)
+        replaces any previous avatar, and the old uploaded file is deleted
+        from disk.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+                  description: Image file to upload (PNG/JPEG/GIF/WebP, max 2 MB).
+      responses:
+        '200':
+          description: Avatar uploaded successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        user: { $ref: '#/components/schemas/SafeUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '413':
+          description: Request entity too large (image exceeds 2 MB)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /api/v1/messages/{username}:
     post:
       tags: [Messages]
@@ -920,12 +991,24 @@ paths:
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 }, description: Search username, name, or email }
+        - { name: role, in: query, schema: { type: string, enum: [user, admin] }, description: Filter by role }
       responses:
         '200': { description: Users }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Get user details by ID (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      responses:
+        '200': { description: User details }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [Admin]
       summary: Enable or disable an account (admin only)
@@ -946,6 +1029,103 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Admin]
+      summary: Delete an account (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      responses:
+        '200': { description: User deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      summary: Change user role between user and admin (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [user, admin] }
+      responses:
+        '200': { description: Role updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/users/{id}/password:
+    patch:
+      tags: [Admin]
+      summary: Reset user password as admin (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword: { type: string, minLength: 8, maxLength: 72 }
+      responses:
+        '200': { description: Password reset successfully }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/users/{id}/revoke-sessions:
+    post:
+      tags: [Admin]
+      summary: Revoke all active sessions for a user (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      responses:
+        '200': { description: Sessions revoked }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/reports:
+    get:
+      tags: [Admin]
+      summary: List reports with status filter (admin only)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, reviewed, dismissed] } }
+      responses:
+        '200': { description: Reports list }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/reports/{id}:
+    patch:
+      tags: [Admin]
+      summary: Update report status (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [pending, reviewed, dismissed] }
+      responses:
+        '200': { description: Report updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/admin/audit-logs:
     get:
@@ -959,3 +1139,211 @@ paths:
         '200': { description: Audit logs }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/system:
+    get:
+      tags: [Admin]
+      summary: Real-time system health and Redis metrics (admin only)
+      description: |
+        Returns live operational diagnostics including:
+        - Redis connection status, round-trip latency (ping), and total keys
+        - MongoDB connection status and readyState
+        - Node.js heap memory and RSS usage
+        - Server uptime and host platform load
+      responses:
+        '200':
+          description: System health diagnostics
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/admin/system/flush-cache:
+    post:
+      tags: [Admin]
+      summary: Purge application Redis cache (admin only)
+      description: |
+        Safely clears non-persistent cache keys while logging an audit trail event.
+      responses:
+        '200':
+          description: Cache flushed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/confirm-email/send:
+    post:
+      tags: [Email Confirmation]
+      summary: Send email confirmation code (OTP)
+      description: |
+        Sends a 6-digit numeric OTP to the caller's registered email address.
+        Rate limited to 10 requests per 15 minutes.
+      security:
+        - bearerAuth: []
+      responses:
+        '202': { description: Verification code sent }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/confirm-email/verify:
+    post:
+      tags: [Email Confirmation]
+      summary: Verify email with OTP code
+      description: |
+        Validates the 6-digit OTP code and marks `isVerified: true` on the caller's account.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^\\d{6}$', example: '123456' }
+      responses:
+        '200': { description: Email confirmed successfully }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/reception:
+    get:
+      tags: [Feedback]
+      summary: Get own feedback reception settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Reception settings }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    put:
+      tags: [Feedback]
+      summary: Update own feedback reception settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Settings updated }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/reception/prompts:
+    put:
+      tags: [Feedback]
+      summary: Replace custom guided prompts
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompts]
+              properties:
+                prompts:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200': { description: Prompts updated }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/mirror:
+    get:
+      tags: [Feedback]
+      summary: Get feedback mirror insights
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Mirror analysis }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/goals:
+    get:
+      tags: [Feedback]
+      summary: List personal feedback goals
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Goals list }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [Feedback]
+      summary: Create a personal feedback goal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                targetDate: { type: string, format: date-time }
+      responses:
+        '201': { description: Goal created }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/goals/due:
+    get:
+      tags: [Feedback]
+      summary: List due goals
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Due goals }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/feedback/goals/{id}:
+    get:
+      tags: [Feedback]
+      summary: Get goal by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      responses:
+        '200': { description: Goal details }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Feedback]
+      summary: Update goal
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Goal updated }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Feedback]
+      summary: Delete goal
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' } }
+      responses:
+        '200': { description: Goal deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }

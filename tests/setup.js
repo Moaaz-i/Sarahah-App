@@ -24,6 +24,10 @@ process.env.SMTP_HOST = '';
 process.env.SMTP_USER = '';
 process.env.SMTP_PASS = '';
 
+// Redis: leave empty in default test runs so external Upstash state does not pollute tests
+delete process.env.UPSTASH_REDIS_REST_URL;
+delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
 // OTP settings for tests (short codes for easy debugging).
 process.env.OTP_LENGTH = '6';
 process.env.OTP_TTL_MINUTES = '15';

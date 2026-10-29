@@ -52,6 +52,49 @@ export function AuthProvider({ children }) {
     };
   }, [loadMe]);
 
+  useEffect(() => {
+    const handleLogoutBroadcast = () => {
+      setUser(null);
+    };
+
+    const handleStorageChange = () => {
+      if (!hasSession()) {
+        setUser(null);
+      }
+    };
+
+    // When user switches or focuses on the other browser, instantly verify with the server
+    const handleWindowFocus = () => {
+      if (hasSession()) {
+        loadMe().catch(() => {
+          clearSession();
+          setUser(null);
+        });
+      }
+    };
+
+    // Heartbeat check every 10 seconds while visible to detect multi-device logout
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === 'visible' && hasSession()) {
+        loadMe().catch(() => {
+          clearSession();
+          setUser(null);
+        });
+      }
+    }, 10000);
+
+    window.addEventListener('sarhny:auth:logout', handleLogoutBroadcast);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      window.removeEventListener('sarhny:auth:logout', handleLogoutBroadcast);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      clearInterval(heartbeat);
+    };
+  }, [loadMe]);
+
   const adopt = useCallback((data) => {
     setSession(data);
     setUser(data.user);
@@ -68,9 +111,13 @@ export function AuthProvider({ children }) {
     [adopt],
   );
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (allDevices = false) => {
     try {
-      await authApi.logout();
+      if (allDevices) {
+        await authApi.logoutAll();
+      } else {
+        await authApi.logout();
+      }
     } catch {
       /* even if the server call fails we drop the local session */
     }

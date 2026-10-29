@@ -1,4 +1,5 @@
 import asyncHandler from '../utils/asyncHandler.js';
+import AppError from '../utils/AppError.js';
 import * as userService from '../services/userService.js';
 
 /** GET /api/v1/users/:username — public profile. */
@@ -19,6 +20,25 @@ export const updateMe = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Profile updated successfully',
+    data: result,
+  });
+});
+
+/** PATCH /api/v1/users/me/avatar — upload an avatar image file (multer). */
+export const uploadAvatar = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw AppError.badRequest('No image was uploaded');
+  }
+
+  const result = await userService.setUploadedAvatar(
+    req.user._id,
+    req.file.buffer,
+    req.file.mimetype,
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Profile picture updated successfully',
     data: result,
   });
 });
@@ -49,4 +69,4 @@ export const deleteMe = asyncHandler(async (req, res) => {
   });
 });
 
-export default { getProfile, updateMe, changePassword, deleteMe };
+export default { getProfile, updateMe, changePassword, deleteMe, uploadAvatar };

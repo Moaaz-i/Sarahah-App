@@ -51,3 +51,29 @@ export const STARTER_PROMPTS = [
   'ما الذي يمكنني تحسينه؟',
   'ما الانطباع الأول الذي أخذته عني؟',
 ];
+
+/** Identity clues declaring relation without revealing identity */
+export const IDENTITY_CLUES = [
+  { key: 'none', label: 'مجهول تمامًا', icon: '🎭', color: '#94a3b8' },
+  { key: 'friend', label: 'صديق مقرب', icon: '🤝', color: '#38bdf8' },
+  { key: 'colleague', label: 'زميل عمل / دراسة', icon: '💼', color: '#a855f7' },
+  { key: 'follower', label: 'متابع', icon: '📱', color: '#34d399' },
+  { key: 'secret_admirer', label: 'معجب سري', icon: '💌', color: '#f43f5e' },
+  { key: 'family', label: 'من العائلة / الأقارب', icon: '🏡', color: '#fb923c' },
+];
+
+export const IDENTITY_CLUE_MAP = Object.fromEntries(IDENTITY_CLUES.map((c) => [c.key, c]));
+export const identityClueOf = (key) => IDENTITY_CLUE_MAP[key] ?? IDENTITY_CLUE_MAP.none;
+
+/** Sentiment metadata */
+export const SENTIMENTS = [
+  { key: 'positive', label: 'إيجابية وتقدير', icon: '💖', color: '#10b981' },
+  { key: 'constructive', label: 'نصح وتطوير', icon: '💡', color: '#38bdf8' },
+  { key: 'question', label: 'سؤال واستفسار', icon: '❓', color: '#a855f7' },
+  { key: 'neutral', label: 'ملاحظة عامة', icon: '💬', color: '#94a3b8' },
+  { key: 'negative', label: 'تنبيه سلوك', icon: '⚠️', color: '#f59e0b' },
+];
+
+export const SENTIMENT_MAP = Object.fromEntries(SENTIMENTS.map((s) => [s.key, s]));
+export const sentimentOf = (key) => SENTIMENT_MAP[key] ?? SENTIMENT_MAP.neutral;
+

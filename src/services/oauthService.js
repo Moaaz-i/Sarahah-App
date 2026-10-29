@@ -104,17 +104,18 @@ export const buildUsername = async (handle) => {
  * ------------------------------------------------------------------ */
 
 /** Start the login flow: returns the consent URL plus the flow to persist. */
-export const startLogin = async ({ loginHint } = {}) => {
+export const startLogin = async ({ loginHint, prompt, popup } = {}) => {
   assertConfigured();
 
   const { codeVerifier, codeChallenge } = await google.generatePkce();
-  const flow = createFlow({ purpose: 'login', codeVerifier });
+  const flow = createFlow({ purpose: 'login', codeVerifier, isPopup: Boolean(popup) });
 
   const url = google.buildAuthorizationUrl({
     state: flow.s,
     codeChallenge,
     nonce: flow.n,
     loginHint,
+    prompt,
   });
 
   return { url, flow };

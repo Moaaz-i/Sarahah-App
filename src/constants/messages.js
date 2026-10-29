@@ -37,6 +37,9 @@ export const ERROR_CODES = Object.freeze({
   OAUTH_HANDOFF_INVALID: 'OAUTH_HANDOFF_INVALID',
   PROMPTS_LIMIT_REACHED: 'PROMPTS_LIMIT_REACHED',
   INVALID_REVIEW_DATE: 'INVALID_REVIEW_DATE',
+  TOKEN_REVOKED: 'TOKEN_REVOKED',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+  FILE_TAMPERED: 'FILE_TAMPERED',
 });
 
 export const ERROR_MESSAGES = Object.freeze({
@@ -74,4 +77,7 @@ export const ERROR_MESSAGES = Object.freeze({
   [ERROR_CODES.OAUTH_LAST_LOGIN_METHOD]:
     'Cannot unlink the only sign-in method, set a password first',
   [ERROR_CODES.OAUTH_HANDOFF_INVALID]: 'The sign-in handoff code is invalid or expired',
+  [ERROR_CODES.TOKEN_REVOKED]: 'Token has been revoked',
+  [ERROR_CODES.SESSION_EXPIRED]: 'Session has expired or was revoked, please sign in again',
+  [ERROR_CODES.FILE_TAMPERED]: 'File signature or structure indicates tampering (magic number verification failed)',
 });

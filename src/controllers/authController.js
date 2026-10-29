@@ -42,13 +42,33 @@ export const refresh = asyncHandler(async (req, res) => {
   });
 });
 
-/** POST /api/v1/auth/logout */
+/** POST /api/v1/auth/logout — logout from current device */
 export const logout = asyncHandler(async (req, res) => {
-  const result = await authService.logout(req.user, req.body?.refreshToken);
+  const result = await authService.logout(req.user, {
+    refreshToken: req.body?.refreshToken,
+    accessToken: req.token,
+    tokenPayload: req.tokenPayload,
+    requestId: req.requestId,
+  });
 
   res.status(200).json({
     success: true,
-    message: 'Logged out successfully',
+    message: 'Logged out successfully from this device',
+    data: result,
+  });
+});
+
+/** POST /api/v1/auth/logout-all — logout from all devices */
+export const logoutAll = asyncHandler(async (req, res) => {
+  const result = await authService.logoutAll(req.user, {
+    accessToken: req.token,
+    tokenPayload: req.tokenPayload,
+    requestId: req.requestId,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully from all devices',
     data: result,
   });
 });
@@ -64,4 +84,4 @@ export const me = asyncHandler(async (req, res) => {
   });
 });
 
-export default { register, login, refresh, logout, me };
+export default { register, login, refresh, logout, logoutAll, me };

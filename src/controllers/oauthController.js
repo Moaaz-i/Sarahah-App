@@ -55,13 +55,14 @@ const withParams = (base, params) => {
  * global error middleware renders the standard JSON error envelope.
  * Unexpected (non-operational) errors are NEVER masked as a redirect.
  */
-const failCallback = (res, next, err) => {
+const failCallback = (res, next, err, isPopup = false) => {
   if (env.oauth.redirectUrl && err instanceof AppError) {
     res.redirect(
       302,
       withParams(env.oauth.redirectUrl, {
         error: err.code,
         error_description: err.message,
+        popup: isPopup ? '1' : undefined,
       }),
     );
     return;
@@ -71,7 +72,11 @@ const failCallback = (res, next, err) => {
 
 /** GET /api/v1/auth/google — start the sign-in flow. */
 export const start = asyncHandler(async (req, res) => {
-  const { url, flow } = await oauthService.startLogin({ loginHint: req.query.login_hint });
+  const { url, flow } = await oauthService.startLogin({
+    loginHint: req.query.login_hint,
+    prompt: req.query.prompt,
+    popup: req.query.popup,
+  });
 
   setFlowCookie(res, flow);
   res.redirect(302, url);
@@ -130,7 +135,13 @@ export const callback = asyncHandler(async (req, res, next) => {
             : { created: Boolean(result.created) },
       });
 
-      res.redirect(302, withParams(env.oauth.redirectUrl, { handoff }));
+      res.redirect(
+        302,
+        withParams(env.oauth.redirectUrl, {
+          handoff,
+          popup: flow?.pop ? '1' : undefined,
+        }),
+      );
       return;
     }
 
@@ -151,7 +162,7 @@ export const callback = asyncHandler(async (req, res, next) => {
       ),
     });
   } catch (err) {
-    failCallback(res, next, err);
+    failCallback(res, next, err, Boolean(flow?.pop));
   }
 });
 

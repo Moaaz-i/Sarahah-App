@@ -7,6 +7,7 @@ import { ROLES } from '../constants/roles.js';
 import { sanitizeUser } from '../utils/sanitizeUser.js';
 import env from '../config/env.js';
 import * as tokenService from './tokenService.js';
+import * as redisService from './redisService.js';
 
 /** Audit retention: 1 year. */
 const auditRetention = () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -105,16 +106,79 @@ export const login = async ({ identifier, password }, meta = {}) => {
 export const refresh = (body, meta = {}) =>
   tokenService.rotateRefreshToken(body.refreshToken, meta);
 
-/** Revoke the presented refresh token (or all of them when none is sent). */
-export const logout = async (user, refreshToken) => {
+/**
+ * Logout from one device (revokes current refresh token + blacklists access token in Redis).
+ */
+export const logout = async (user, options = {}) => {
+  const refreshToken = typeof options === 'string' ? options : options?.refreshToken;
+  const accessToken = typeof options === 'object' ? options?.accessToken : undefined;
+  const tokenPayload = typeof options === 'object' ? options?.tokenPayload : undefined;
+  const requestId = typeof options === 'object' ? options?.requestId : undefined;
+
   if (refreshToken) {
     await tokenService.revokeRefreshToken(refreshToken);
   }
-  await tokenService.revokeAllForUser(user._id, { reason: 'logout' });
-  return { loggedOut: true };
+
+  if (accessToken) {
+    const remainingSec = tokenPayload?.exp
+      ? Math.max(1, Math.floor(tokenPayload.exp - Date.now() / 1000))
+      : 900;
+    await redisService.blacklistToken(accessToken, remainingSec);
+  }
+
+  await AuditLog.create({
+    actor: user._id,
+    action: 'auth.logout',
+    targetType: 'User',
+    targetId: String(user._id),
+    requestId: requestId ?? null,
+    metadata: { scope: 'single_device' },
+    expiresAt: auditRetention(),
+  });
+
+  return { loggedOut: true, scope: 'device' };
+};
+
+/**
+ * Logout from ALL devices (revokes all refresh tokens, marks revocation in Redis and DB, blacklists access token).
+ */
+export const logoutAll = async (user, options = {}) => {
+  const accessToken = typeof options === 'object' ? options?.accessToken : undefined;
+  const tokenPayload = typeof options === 'object' ? options?.tokenPayload : undefined;
+  const requestId = typeof options === 'object' ? options?.requestId : undefined;
+
+  // Revoke all refresh tokens in DB
+  await tokenService.revokeAllForUser(user._id, { reason: 'logout_all' });
+
+  // Update DB revocation timestamp
+  user.tokensRevokedAt = new Date();
+  await user.save();
+
+  // Set Redis all-device revocation
+  await redisService.revokeAllUserTokens(user._id);
+
+  // Blacklist current access token in Redis
+  if (accessToken) {
+    const remainingSec = tokenPayload?.exp
+      ? Math.max(1, Math.floor(tokenPayload.exp - Date.now() / 1000))
+      : 900;
+    await redisService.blacklistToken(accessToken, remainingSec);
+  }
+
+  await AuditLog.create({
+    actor: user._id,
+    action: 'auth.logout_all',
+    targetType: 'User',
+    targetId: String(user._id),
+    requestId: requestId ?? null,
+    metadata: { scope: 'all_devices' },
+    expiresAt: auditRetention(),
+  });
+
+  return { loggedOut: true, scope: 'all' };
 };
 
 /** Current authenticated user, sanitized. */
 export const me = (user) => ({ user: sanitizeUser(user) });
 
-export default { register, login, logout, me };
+export default { register, login, refresh, logout, logoutAll, me };

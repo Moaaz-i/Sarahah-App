@@ -64,7 +64,10 @@ const userSchema = new mongoose.Schema(
     avatar: {
       type: String,
       trim: true,
-      maxlength: [500, 'Avatar URL is too long'],
+      // Embedded images (the built-in presets) are data URIs, which are far
+      // longer than a URL. `validateAvatarRef` is what actually constrains the
+      // value's shape; this is only a backstop against an unbounded column.
+      maxlength: [65536, 'Avatar reference is too long'],
       default: '',
     },
 
@@ -90,6 +93,11 @@ const userSchema = new mongoose.Schema(
     },
 
     lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+
+    tokensRevokedAt: {
       type: Date,
       default: null,
     },

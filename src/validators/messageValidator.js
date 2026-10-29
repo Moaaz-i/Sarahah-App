@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MESSAGE_CATEGORY_VALUES } from '../constants/feedback.js';
+import { MESSAGE_CATEGORY_VALUES, IDENTITY_CLUE_VALUES } from '../constants/feedback.js';
 
 const objectId = z
   .string({ required_error: 'id is required' })
@@ -44,11 +44,25 @@ export const sendMessageSchema = z
       })
       .optional(),
 
+    /** Optional relationship clue from sender (friend, colleague, etc). */
+    identityClue: z
+      .enum(IDENTITY_CLUE_VALUES, {
+        errorMap: () => ({ message: `identityClue must be one of: ${IDENTITY_CLUE_VALUES.join(', ')}` }),
+      })
+      .optional(),
+
     /** Which guided prompt the sender answered, if any. */
     promptId: z
       .string()
       .trim()
       .max(64, 'invalid promptId')
+      .optional(),
+
+    /** Optional voice audio (base64 data URL or URL string). */
+    voiceUrl: z
+      .string()
+      .trim()
+      .max(8_000_000, 'audio payload is too large')
       .optional(),
   })
   .strict();
@@ -81,10 +95,44 @@ export const listMessagesQuerySchema = z
 /** Path param shared by /messages/:id endpoints. */
 export const messageIdParamSchema = z.object({ id: objectId }).strict();
 
+/** Parameter schema for anonymous conversation thread. */
+export const conversationKeyParamSchema = z
+  .object({
+    conversationKey: z
+      .string({ required_error: 'conversationKey is required' })
+      .trim()
+      .min(16, 'invalid conversationKey')
+      .max(128, 'invalid conversationKey'),
+  })
+  .strict();
+
 /** PATCH /messages/:id/archive — body toggles the archived state. */
 export const archiveMessageSchema = z
   .object({
     archived: z.boolean().default(true),
+  })
+  .strict();
+
+/** POST /messages/:id/reply — recipient replies in thread or public. */
+export const recipientReplySchema = z
+  .object({
+    content: z
+      .string({ required_error: 'reply content is required' })
+      .trim()
+      .min(1, 'reply cannot be empty')
+      .max(1000, 'reply cannot exceed 1000 characters'),
+    isPublic: z.boolean().optional(),
+  })
+  .strict();
+
+/** POST /messages/thread/:conversationKey/reply — anonymous sender replies back in thread. */
+export const senderThreadReplySchema = z
+  .object({
+    content: z
+      .string({ required_error: 'reply content is required' })
+      .trim()
+      .min(1, 'reply cannot be empty')
+      .max(1000, 'reply cannot exceed 1000 characters'),
   })
   .strict();
 
@@ -93,5 +141,8 @@ export default {
   sendMessageSchema,
   listMessagesQuerySchema,
   messageIdParamSchema,
+  conversationKeyParamSchema,
   archiveMessageSchema,
+  recipientReplySchema,
+  senderThreadReplySchema,
 };

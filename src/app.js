@@ -45,8 +45,14 @@ app.use(
   }),
 );
 
-// 3. Body size limits.
-app.use(express.json({ limit: '50kb' }));
+// 3. Body size limits: allow up to 10MB for message sending (voice notes / multimedia),
+// while maintaining a strict 50KB limit on authentication and other endpoints.
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path.startsWith('/api/v1/messages/')) {
+    return express.json({ limit: '10mb' })(req, res, next);
+  }
+  return express.json({ limit: '50kb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: false, limit: '50kb' }));
 
 // 3b. Cookies (unsigned parsing only): the OAuth flow cookie carries its own
@@ -80,6 +86,18 @@ app.get('/api/v1/openapi.yaml', (req, res) => {
 
 // 8. API routes under /api/v1.
 app.use('/api/v1', apiRouter);
+
+// 8b. Serve uploaded avatars. Nosniff + long cache so a user-uploaded image
+//     can never be interpreted as HTML/JS, and the browser caches it hard.
+app.use(
+  '/uploads',
+  express.static(join(__dirname, '..', 'uploads'), {
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }),
+);
 
 // 9. 404 for unknown routes.
 app.use(notFoundMiddleware);

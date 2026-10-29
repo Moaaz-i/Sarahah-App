@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validateAvatarRef } from '../utils/imageRef.js';
 
 const usernameParam = z
   .string({ required_error: 'username is required' })
@@ -25,10 +26,29 @@ export const updateProfileSchema = z
     avatar: z
       .string()
       .trim()
-      .max(500, 'avatar URL is too long')
-      .refine((v) => v === '' || /^https?:\/\/\S+$/.test(v), {
-        message: 'avatar must be a valid http(s) URL',
-      })
+      // The cap lives in imageRef.js; the check here is a cheap early reject
+      // so an absurd body fails validation instead of reaching the parser.
+      .max(65536, 'avatar reference is too long')
+      // Delegated to the canonical allow-list validator, which accepts exactly
+      // four shapes (empty, embedded data URI, our own upload path, or an
+      // http(s) URL) and parses each strictly. The previous rule allowed any
+      // `https?://` string up to 500 chars, which is the classic link-input
+      // surface; this closes it and simultaneously makes the built-in embedded
+      // presets storable, which the old regex silently rejected.
+      .refine(
+        (v) => {
+          try {
+            validateAvatarRef(v);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        {
+          message:
+            'avatar must be an http(s) URL, an uploaded image, or a supported embedded image',
+        },
+      )
       .optional(),
   })
   .strict()

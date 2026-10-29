@@ -6,9 +6,13 @@ import AuditLog from '../models/AuditLog.js';
 import AppError from '../utils/AppError.js';
 import { ERROR_CODES } from '../constants/messages.js';
 import { toPublicUser, sanitizeUser } from '../utils/sanitizeUser.js';
+import { sanitizeDisplayName, sanitizeMultiline } from '../utils/sanitizeText.js';
+import { validateAvatarRef, isUploadRef } from '../utils/imageRef.js';
 import env from '../config/env.js';
 import * as tokenService from './tokenService.js';
 import * as receptionService from './receptionService.js';
+import * as avatarService from './avatarService.js';
+import * as redisService from './redisService.js';
 
 const auditRetention = () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
@@ -32,16 +36,33 @@ export const getPublicProfile = async (username) => {
   return { user: profile };
 };
 
-/** Update own profile. Only whitelisted fields reach the database. */
+/**
+ * Update own profile. Only whitelisted fields reach the database.
+ *
+ * INPUT HARDENING
+ * These three fields are exactly the ones rendered on the public profile page,
+ * and `avatar` is a link input. Each is normalised here rather than trusted to
+ * the validator alone, so a request that bypasses validation (a direct service
+ * call, a future route, a script) still cannot store raw markup or a dangerous
+ * URL scheme.
+ */
 export const updateProfile = async (userId, updates) => {
   const allowed = {};
-  if (updates.name !== undefined) allowed.name = updates.name;
-  if (updates.bio !== undefined) allowed.bio = updates.bio;
-  if (updates.avatar !== undefined) allowed.avatar = updates.avatar;
+
+  if (updates.name !== undefined) allowed.name = sanitizeDisplayName(updates.name);
+  if (updates.bio !== undefined) allowed.bio = sanitizeMultiline(updates.bio);
+
+  if (updates.avatar !== undefined) {
+    // Throws AppError with a message safe to show the user.
+    allowed.avatar = validateAvatarRef(updates.avatar);
+  }
 
   if (Object.keys(allowed).length === 0) {
     throw AppError.badRequest('No valid fields to update');
   }
+
+  const previous = await User.findById(userId).select('avatar');
+  if (!previous) throw AppError.notFound('User not found');
 
   const user = await User.findByIdAndUpdate(
     userId,
@@ -50,6 +71,61 @@ export const updateProfile = async (userId, updates) => {
   );
 
   if (!user) throw AppError.notFound('User not found');
+
+  // Swap away from a file we uploaded on their behalf -> reclaim the disk.
+  // Only refs we generated can be deleted; an external URL or a preset is
+  // ignored by `removeStoredAvatar` by construction.
+  if (allowed.avatar !== undefined && previous.avatar && previous.avatar !== allowed.avatar) {
+    await avatarService.removeStoredAvatar(previous.avatar);
+  }
+
+  return { user: sanitizeUser(user) };
+};
+
+/**
+ * Store an avatar file the user uploaded from their device.
+ *
+ * The file has already been sniffed and written by `avatarService`; this
+ * function owns the *account* side: swap the reference, reclaim the previous
+ * file, and record who changed what.
+ */
+export const setUploadedAvatar = async (userId, buffer, declaredMime) => {
+  const previous = await User.findById(userId).select('avatar');
+  if (!previous) throw AppError.notFound('User not found');
+
+  // Write the new file BEFORE touching the account, so a write failure leaves
+  // the user's existing avatar intact rather than pointing at nothing.
+  const ref = await avatarService.storeAvatar(buffer, declaredMime);
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: { avatar: ref } },
+    { new: true, runValidators: true, context: 'query' },
+  );
+
+  if (!user) throw AppError.notFound('User not found');
+
+  if (previous.avatar && previous.avatar !== ref) {
+    await avatarService.removeStoredAvatar(previous.avatar);
+  }
+
+  return { user: sanitizeUser(user) };
+};
+
+/** Clear the avatar entirely and reclaim any uploaded file. */
+export const clearAvatar = async (userId) => {
+  const previous = await User.findById(userId).select('avatar');
+  if (!previous) throw AppError.notFound('User not found');
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: { avatar: '' } },
+    { new: true, runValidators: true, context: 'query' },
+  );
+
+  if (!user) throw AppError.notFound('User not found');
+  if (previous.avatar) await avatarService.removeStoredAvatar(previous.avatar);
+
   return { user: sanitizeUser(user) };
 };
 

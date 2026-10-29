@@ -54,6 +54,53 @@ export default function Settings() {
   const [profileMsg, setProfileMsg] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
 
+  /* --------------------------------------------------- avatar file upload */
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [avatarUploadBusy, setAvatarUploadBusy] = useState(false);
+
+  const handleAvatarFile = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    setAvatarFile(file);
+    if (file) {
+      setAvatarPreview(URL.createObjectURL(file));
+      setProfileMsg(null);
+    } else {
+      setAvatarPreview(null);
+    }
+  };
+
+  const clearAvatarFile = () => {
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    setAvatarFile(null);
+    setAvatarPreview(null);
+  };
+
+  const uploadAvatar = async () => {
+    if (!avatarFile) return;
+    setAvatarUploadBusy(true);
+    setProfileErr({});
+    setProfileMsg(null);
+    try {
+      const { data } = await usersApi.uploadAvatar(avatarFile);
+      // The server returns the stored reference (e.g. /uploads/avatars/<uuid>.png).
+      setProfile((p) => ({ ...p, avatar: data.user.avatar }));
+      setUser(data.user);
+      clearAvatarFile();
+      setProfileMsg({ type: 'success', text: 'تم رفع صورة الملف الشخصي.' });
+      toast.success('تم تحديث صورة الملف الشخصي');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setProfileErr(err.fieldErrors || {});
+        setProfileMsg({ type: 'error', text: err.message });
+      } else {
+        setProfileMsg({ type: 'error', text: err.message });
+      }
+    } finally {
+      setAvatarUploadBusy(false);
+    }
+  };
+
   /* ------------------------------------------------------------- password */
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwErr, setPwErr] = useState({});
@@ -64,6 +111,26 @@ export default function Settings() {
   const [links, setLinks] = useState(null);
   const [linksErr, setLinksErr] = useState(null);
   const [linkBusy, setLinkBusy] = useState(false);
+
+  /* ------------------------------------------------------------ sessions & logout */
+  const [logoutBusy, setLogoutBusy] = useState(false);
+
+  const handleLogout = async (allDevices = false) => {
+    setLogoutBusy(true);
+    try {
+      await signOut(allDevices);
+      toast.success(
+        allDevices
+          ? 'تم تسجيل الخروج وإبطال كافة الجلسات من كل الأجهزة بنجاح'
+          : 'تم تسجيل الخروج من هذا الجهاز بنجاح',
+      );
+      navigate('/');
+    } catch {
+      toast.error('حدث خطأ أثناء تسجيل الخروج');
+    } finally {
+      setLogoutBusy(false);
+    }
+  };
 
   /* ------------------------------------------------------------ danger zone */
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -141,19 +208,32 @@ export default function Settings() {
     setProfileBusy(true);
     setProfileErr({});
     setProfileMsg(null);
+
+    // Normalize avatar: trim whitespace and reject invisible/control characters
+    // before sending, so the server gets a clean value.
+    const avatarValue = String(profile.avatar ?? '').trim();
+
+    const payload = { name: profile.name, bio: profile.bio, avatar: avatarValue };
+    // eslint-disable-next-line no-console
+    console.log('[Settings] Saving profile:', { name: profile.name, bio: profile.bio, avatar: avatarValue });
+
     try {
-      const { data } = await usersApi.updateMe({
-        name: profile.name,
-        bio: profile.bio,
-        avatar: profile.avatar,
-      });
+      const { data } = await usersApi.updateMe(payload);
       setUser(data.user);
       setProfileMsg({ type: 'success', text: 'تم حفظ الملف العام.' });
       toast.success('تم تحديث الملف');
     } catch (err) {
       if (err instanceof ApiError) {
         setProfileErr(err.fieldErrors || {});
-        setProfileMsg({ type: 'error', text: err.message });
+        const fieldMsg = err.fieldErrors
+          ? Object.entries(err.fieldErrors)
+              .map(([f, m]) => `${f}: ${m}`)
+              .join(' — ')
+          : '';
+        setProfileMsg({
+          type: 'error',
+          text: fieldMsg ? `${err.message} — ${fieldMsg}` : err.message,
+        });
       } else {
         setProfileMsg({ type: 'error', text: err.message });
       }
@@ -292,16 +372,51 @@ export default function Settings() {
               error={profileErr.bio}
             />
 
-            <Field
-              label="رابط الصورة"
-              name="avatar"
-              type="url"
-              placeholder="https://…"
-              hint="يُخزَّن الرابط كما هو — الخادم لا ينزّل الصورة ولا يتحقق منها. الرابط المعطوب يُعرض كحرفاً أولى."
-              value={profile.avatar}
-              onChange={(e) => setProfile((p) => ({ ...p, avatar: e.target.value }))}
-              error={profileErr.avatar}
-            />
+            <div className="avatar-upload">
+              <label className="avatar-upload__label">صورة من جهازك</label>
+
+              {avatarPreview ? (
+                <div className="avatar-upload__preview">
+                  <img src={avatarPreview} alt="معاينة" />
+                  <button
+                    type="button"
+                    className="avatar-upload__remove"
+                    onClick={clearAvatarFile}
+                    aria-label="إزالة الصورة المختارة"
+                  >
+                    إزالة
+                  </button>
+                </div>
+              ) : (
+                <div className="file-picker">
+                  <label
+                    className={`file-picker__label btn btn--outline ${avatarUploadBusy ? 'opacity-50 pointer-events-none' : ''}`}
+                    aria-disabled={avatarUploadBusy || undefined}
+                  >
+                    اختر صورة
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      onChange={handleAvatarFile}
+                      disabled={avatarUploadBusy}
+                      className="file-picker__input"
+                    />
+                  </label>
+                  <span className="file-picker__name">{avatarFile?.name || 'لم يُختَر أي ملف بعد'}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                className={`btn btn--primary avatar-upload__btn ${avatarUploadBusy ? 'opacity-50 pointer-events-none' : ''}`}
+                onClick={uploadAvatar}
+                disabled={avatarUploadBusy || !avatarFile}
+              >
+                {avatarUploadBusy ? 'جارٍ الرفع…' : 'رفع الصورة'}
+              </button>
+              <p className="muted avatar-upload__hint">
+                PNG، JPEG، GIF، WebP — حتى 2 ميجابايت.
+              </p>
+            </div>
 
             <div className="preset-row">
               {PRESETS.map(({ url, label }) => (
@@ -310,7 +425,11 @@ export default function Settings() {
                   type="button"
                   title={label}
                   className={`preset${profile.avatar === url ? ' preset--active' : ''}`}
-                  onClick={() => setProfile((p) => ({ ...p, avatar: url }))}
+                  onClick={() => {
+                    setProfile((p) => ({ ...p, avatar: url }));
+                    // eslint-disable-next-line no-console
+                    console.log('[Settings] Preset selected:', label, '->', url);
+                  }}
                   aria-label={`اختيار صورة: ${label}`}
                 >
                   <Avatar src={url} name={profile.name} size={44} />
@@ -510,6 +629,40 @@ export default function Settings() {
             {pwBusy ? 'جارٍ الحفظ…' : 'تغيير كلمة المرور'}
           </button>
         </form>
+      </Section>
+
+      <Section
+        title="إدارة الجلسات وتسجيل الخروج"
+        description="تحكّم في جلستك الحالية أو قم بإنهاء وإبطال الجلسات النشطة على جميع الأجهزة الأخرى فورًا عبر Redis."
+      >
+        <div className="row-between">
+          <div>
+            <p>
+              <strong>إنهاء الجلسة وتسجيل الخروج</strong>
+            </p>
+            <p className="muted">
+              يمكنك الخروج من هذا المتصفح الحالي فقط أو إبطال وحظر جميع الرموز (Tokens) فورًا عبر Redis على كافة الأجهزة (الهواتف والحواسيب).
+            </p>
+          </div>
+          <div className="btn-group--attached" role="group" aria-label="خيارات تسجيل الخروج">
+            <button
+              type="button"
+              className="btn btn--single-device"
+              disabled={logoutBusy}
+              onClick={() => handleLogout(false)}
+            >
+              🚪 تسجيل الخروج من هذا الجهاز
+            </button>
+            <button
+              type="button"
+              className="btn btn--all-devices"
+              disabled={logoutBusy}
+              onClick={() => handleLogout(true)}
+            >
+              🔒 تسجيل الخروج من كل الأجهزة
+            </button>
+          </div>
+        </div>
       </Section>
 
       <Section title="منطقة الخطر" description="لا يمكن التراجع عن هذه الخطوة.">

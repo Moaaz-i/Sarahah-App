@@ -18,6 +18,8 @@ const listUsersQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
+    search: z.string().trim().max(100).optional(),
+    role: z.enum(['user', 'admin']).optional(),
   })
   .strict();
 
@@ -94,6 +96,12 @@ router.patch(
 
 router.delete('/users/:id', validate({ params: idParamSchema }), adminController.deleteUser);
 
+router.post(
+  '/users/:id/revoke-sessions',
+  validate({ params: idParamSchema }),
+  adminController.revokeUserSessions,
+);
+
 // ---- reports
 router.get('/reports', validate({ query: listReportsQuerySchema }), adminController.listReports);
 
@@ -109,5 +117,9 @@ router.get(
   validate({ query: auditLogsQuerySchema }),
   adminController.listAuditLogs,
 );
+
+// ---- system & redis health
+router.get('/system', adminController.getSystemHealth);
+router.post('/system/flush-cache', adminController.flushSystemCache);
 
 export default router;

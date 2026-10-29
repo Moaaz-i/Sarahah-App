@@ -1,17 +1,40 @@
 import mongoose from 'mongoose';
-import { MESSAGE_CATEGORY_VALUES, HARM_LABEL_VALUES } from '../constants/feedback.js';
+import {
+  MESSAGE_CATEGORY_VALUES,
+  HARM_LABEL_VALUES,
+  IDENTITY_CLUE_VALUES,
+  SENTIMENT_VALUES,
+} from '../constants/feedback.js';
 
 /**
  * Anonymous message delivered to a user.
  * SECURITY: this model intentionally stores NO sender identity, no IP,
  * and no device information.
  *
- * The feedback fields below (`category`, `harmLabel`, `isQuarantined`) are
- * derived from the message TEXT, never from who sent it. They add no sender
- * signal: a category is chosen by the sender from a public list, and the harm
- * label is computed locally by a rule engine over the same characters that are
- * already stored in `content`. Neither can identify anyone.
+ * The feedback fields below (`category`, `harmLabel`, `isQuarantined`, `sentiment`) are
+ * derived from the message TEXT or declared intent, never from who sent it.
  */
+const replySchema = new mongoose.Schema(
+  {
+    authorType: {
+      type: String,
+      enum: ['recipient', 'sender'],
+      required: true,
+    },
+    content: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [1000, 'Reply cannot exceed 1000 characters'],
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: true },
+);
+
 const messageSchema = new mongoose.Schema(
   {
     recipient: {
@@ -62,7 +85,6 @@ const messageSchema = new mongoose.Schema(
     /**
      * The sender's declared intent, chosen from a fixed public list.
      * `general` is the fallback so an unlabelled message is never rejected.
-     * This is the backbone of the inbox grouping and the feedback mirror.
      */
     category: {
       type: String,
@@ -74,6 +96,17 @@ const messageSchema = new mongoose.Schema(
       index: true,
     },
 
+    /** Optional relationship tag declared by the sender (e.g. friend, colleague). */
+    identityClue: {
+      type: String,
+      enum: {
+        values: IDENTITY_CLUE_VALUES,
+        message: `Identity clue must be one of: ${IDENTITY_CLUE_VALUES.join(', ')}`,
+      },
+      default: 'none',
+      index: true,
+    },
+
     /** The guided-honesty prompt id the sender answered, if any. */
     promptId: {
       type: String,
@@ -82,9 +115,19 @@ const messageSchema = new mongoose.Schema(
       default: null,
     },
 
+    /** Heuristic sentiment classification of the note. */
+    sentiment: {
+      type: String,
+      enum: {
+        values: SENTIMENT_VALUES,
+        message: `Sentiment must be one of: ${SENTIMENT_VALUES.join(', ')}`,
+      },
+      default: 'neutral',
+      index: true,
+    },
+
     /**
      * Result of the local rule-based harm shield. null = nothing matched.
-     * Probabilistic evidence, NOT a verdict: the recipient decides.
      */
     harmLabel: {
       type: String,
@@ -106,8 +149,7 @@ const messageSchema = new mongoose.Schema(
 
     /**
      * Soft-quarantine: hidden behind an explicit section in the inbox until
-     * the recipient reads, releases or deletes it. The recipient can turn the
-     * shield off entirely in reception settings.
+     * the recipient reads, releases or deletes it.
      */
     isQuarantined: {
       type: Boolean,
@@ -125,6 +167,39 @@ const messageSchema = new mongoose.Schema(
     goal: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'FeedbackGoal',
+      default: null,
+    },
+
+    /**
+     * Secret key given to the anonymous sender at creation time to access
+     * and participate in a two-way anonymous conversation thread.
+     */
+    conversationKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+
+    /** Public response written by recipient (for Story Card and profile showcase). */
+    publicReply: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Public reply cannot exceed 1000 characters'],
+      default: null,
+    },
+
+    publicReplyAt: {
+      type: Date,
+      default: null,
+    },
+
+    /** Two-way private thread replies between recipient and the anonymous sender. */
+    replies: [replySchema],
+
+    /** Optional base64 or audio URL for anonymous voice note. */
+    voiceUrl: {
+      type: String,
       default: null,
     },
   },

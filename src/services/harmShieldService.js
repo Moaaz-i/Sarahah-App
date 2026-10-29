@@ -237,19 +237,64 @@ const scan = (text) => {
   return { harmLabel: label, matched, confidence: Number(confidence.toFixed(2)) };
 };
 
+const POSITIVE_PATTERNS = [
+  'شكرا', 'اشكرك', 'مبدع', 'مميز', 'فخور', 'رائع', 'جميل', 'عظيم', 'احبك', 'بحبك',
+  'افضل', 'طيب', 'كريم', 'عبقري', 'عاش', 'برافو', 'تسلم', 'الله يوفقك', 'الله يسعدك',
+  'ما شاء الله', 'تبارك الله', 'proud', 'love', 'great', 'awesome', 'best', 'thank', 'amazing',
+];
+
+const CONSTRUCTIVE_PATTERNS = [
+  'انصحك', 'نصيحه', 'لو تجرب', 'حاول', 'طور', 'تطوير', 'تحسين', 'فكر في',
+  'من الافضل', 'ركز على', 'اقترح', 'تعديل', 'ملاحظه', 'advice', 'improve', 'suggest', 'try',
+];
+
+const QUESTION_PATTERNS = [
+  '?', '؟', 'هل', 'ليه', 'لماذا', 'كيف', 'ازاي', 'شو', 'ايه', 'مين', 'متى', 'فين', 'وين'
+];
+
+/**
+ * Heuristically classify sentiment of a message.
+ */
+export const analyzeSentiment = (rawText = '', harmLabel = null) => {
+  if (harmLabel) return 'negative';
+  const text = normalizeArabic(rawText);
+
+  let hasQuestion = false;
+  for (const q of QUESTION_PATTERNS) {
+    if (text.includes(q)) {
+      hasQuestion = true;
+      break;
+    }
+  }
+
+  let positiveScore = 0;
+  for (const p of POSITIVE_PATTERNS) {
+    if (text.includes(normalizeArabic(p))) positiveScore += 1;
+  }
+
+  let constructiveScore = 0;
+  for (const c of CONSTRUCTIVE_PATTERNS) {
+    if (text.includes(normalizeArabic(c))) constructiveScore += 1;
+  }
+
+  if (positiveScore > 0 && positiveScore >= constructiveScore) return 'positive';
+  if (constructiveScore > 0) return 'constructive';
+  if (hasQuestion) return 'question';
+
+  return 'neutral';
+};
+
 /**
  * Scan a message.
  *
- * @returns {{harmLabel: string|null, matched: string[], confidence: number}}
- *   harmLabel - strongest category found, or null when nothing matched.
- *   matched   - the normalised phrases that fired, so the UI can explain why.
- *   confidence- 0..1 heuristic; higher when several independent patterns fire
- *               on a message that has enough real words to be meaningful.
+ * @returns {{harmLabel: string|null, matched: string[], confidence: number, sentiment: string}}
  */
 export const analyze = (rawText = '') => {
   const text = normalizeArabic(rawText);
-  if (!text.trim()) return { harmLabel: null, matched: [], confidence: 0 };
-  return scan(text);
+  if (!text.trim()) return { harmLabel: null, matched: [], confidence: 0, sentiment: 'neutral' };
+  const scanResult = scan(text);
+  const sentiment = analyzeSentiment(rawText, scanResult.harmLabel);
+  return { ...scanResult, sentiment };
 };
 
 /**
@@ -267,4 +312,4 @@ export const previewForSender = (text = '') => {
   };
 };
 
-export default { analyze, previewForSender, normalizeArabic };
+export default { analyze, analyzeSentiment, previewForSender, normalizeArabic };

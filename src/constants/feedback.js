@@ -82,6 +82,51 @@ export const GOAL_STATUSES = Object.freeze({
 
 export const GOAL_STATUS_VALUES = Object.freeze(Object.values(GOAL_STATUSES));
 
+/**
+ * Identity Clues: Optional self-declared relationship tag from the sender
+ * giving context without revealing identity.
+ */
+export const IDENTITY_CLUES = Object.freeze({
+  NONE: 'none',
+  FRIEND: 'friend',
+  COLLEAGUE: 'colleague',
+  FOLLOWER: 'follower',
+  SECRET_ADMIRER: 'secret_admirer',
+  FAMILY: 'family',
+});
+
+export const IDENTITY_CLUE_VALUES = Object.freeze(Object.values(IDENTITY_CLUES));
+
+export const IDENTITY_CLUE_META = Object.freeze({
+  [IDENTITY_CLUES.NONE]: { label: 'مجهول تمامًا', icon: '🎭', color: '#94a3b8' },
+  [IDENTITY_CLUES.FRIEND]: { label: 'صديق مقرب', icon: '🤝', color: '#38bdf8' },
+  [IDENTITY_CLUES.COLLEAGUE]: { label: 'زميل عمل / دراسة', icon: '💼', color: '#a855f7' },
+  [IDENTITY_CLUES.FOLLOWER]: { label: 'متابع', icon: '📱', color: '#34d399' },
+  [IDENTITY_CLUES.SECRET_ADMIRER]: { label: 'معجب سري', icon: '💌', color: '#f43f5e' },
+  [IDENTITY_CLUES.FAMILY]: { label: 'من العائلة / الأقارب', icon: '🏡', color: '#fb923c' },
+});
+
+/**
+ * Message sentiment types identified automatically by analysis.
+ */
+export const SENTIMENTS = Object.freeze({
+  POSITIVE: 'positive',
+  CONSTRUCTIVE: 'constructive',
+  QUESTION: 'question',
+  NEUTRAL: 'neutral',
+  NEGATIVE: 'negative',
+});
+
+export const SENTIMENT_VALUES = Object.freeze(Object.values(SENTIMENTS));
+
+export const SENTIMENT_META = Object.freeze({
+  [SENTIMENTS.POSITIVE]: { label: 'إيجابية وتقدير', icon: '💖', color: '#10b981' },
+  [SENTIMENTS.CONSTRUCTIVE]: { label: 'نصح وتطوير', icon: '💡', color: '#38bdf8' },
+  [SENTIMENTS.QUESTION]: { label: 'سؤال واستفسار', icon: '❓', color: '#a855f7' },
+  [SENTIMENTS.NEUTRAL]: { label: 'ملاحظة عامة', icon: '💬', color: '#94a3b8' },
+  [SENTIMENTS.NEGATIVE]: { label: 'تنبيه سلوك', icon: '⚠️', color: '#f59e0b' },
+});
+
 export default {
   MESSAGE_CATEGORIES,
   MESSAGE_CATEGORY_VALUES,
@@ -91,4 +136,10 @@ export default {
   HARM_META,
   GOAL_STATUSES,
   GOAL_STATUS_VALUES,
+  IDENTITY_CLUES,
+  IDENTITY_CLUE_VALUES,
+  IDENTITY_CLUE_META,
+  SENTIMENTS,
+  SENTIMENT_VALUES,
+  SENTIMENT_META,
 };

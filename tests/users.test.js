@@ -86,6 +86,51 @@ describe('Users', () => {
     });
   });
 
+  describe('PATCH /api/v1/users/me/avatar', () => {
+    // A valid 1x1 PNG (magic bytes + minimal chunks) — enough to pass sniffImage.
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    );
+
+    it('uploads an avatar image and stores the reference', async () => {
+      const { authorization, user } = await authHeaderFor();
+
+      const res = await api
+        .patch('/api/v1/users/me/avatar')
+        .set(authorization)
+        .attach('avatar', tinyPng, 'avatar.png');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.user.avatar).toMatch(/^\/uploads\/avatars\/[0-9a-f-]+\.png$/);
+
+      // The file should actually exist on disk and be served.
+      const { default: User } = await import('../src/models/User.js');
+      const fresh = await User.findById(user._id).select('avatar');
+      expect(fresh.avatar).toBe(res.body.data.user.avatar);
+
+      const fetched = await api.get(`/api/v1/users/${user.username}`);
+      expect(fetched.body.data.user.avatar).toBe(res.body.data.user.avatar);
+    });
+
+    it('rejects a non-image file', async () => {
+      const { authorization } = await authHeaderFor();
+
+      const res = await api
+        .patch('/api/v1/users/me/avatar')
+        .set(authorization)
+        .attach('avatar', Buffer.from('not an image at all'), 'bad.xyz');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('BAD_REQUEST');
+    });
+
+    it('requires authentication', async () => {
+      const res = await api.patch('/api/v1/users/me/avatar').attach('avatar', tinyPng, 'avatar.png');
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe('PATCH /api/v1/users/me/password', () => {
     it('changes the password after verifying the current one and revokes sessions', async () => {
       const { authorization, tokens } = await authHeaderFor();

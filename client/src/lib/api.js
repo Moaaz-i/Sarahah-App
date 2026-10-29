@@ -16,6 +16,18 @@ const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1')
   '',
 );
 
+/** API origin without the /api/v1 prefix, used to build absolute upload URLs. */
+export const API_BASE = API_URL.replace(/\/api\/v1$/, '');
+
+/** Turn a stored avatar reference into an absolute URL the browser can load. */
+export const resolveUploadUrl = (ref) => {
+  if (!ref) return ref;
+  if (/^https?:\/\//i.test(ref)) return ref;
+  if (/^data:image\//i.test(ref)) return ref;
+  if (ref.startsWith('/uploads/')) return `${API_BASE}${ref}`;
+  return ref;
+};
+
 const ACCESS_KEY = 'sarhny.access';
 const REFRESH_KEY = 'sarhny.refresh';
 const LOCK_KEY = 'sarhny.refresh.lock';
@@ -72,13 +84,25 @@ export const setSession = ({ accessToken, refreshToken }) => {
 export const clearSession = () => {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sarhny:auth:logout'));
+  }
 };
 
 /* ---------------------------------------------------------------- transport */
 
 async function transport(path, { method = 'GET', body, auth = true, signal } = {}) {
   const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  let requestBody = undefined;
+  if (body !== undefined) {
+    if (body instanceof FormData) {
+      // Let the browser set multipart/form-data with the correct boundary.
+      requestBody = body;
+    } else {
+      headers['Content-Type'] = 'application/json';
+      requestBody = JSON.stringify(body);
+    }
+  }
 
   if (auth) {
     const token = getAccessToken();
@@ -90,7 +114,7 @@ async function transport(path, { method = 'GET', body, auth = true, signal } = {
     res = await fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: requestBody,
       // Required: the OAuth flow cookie is set/read cross-origin on the link flow.
       credentials: 'include',
       signal,
@@ -125,13 +149,13 @@ async function transport(path, { method = 'GET', body, auth = true, signal } = {
 
 let inFlightRefresh = null;
 
-async function performRefresh() {
+async function performRefresh(force = false) {
   let lockedByUs = false;
 
   // Cross-tab coordination: only one tab may rotate at a time.
   const deadline = Date.now() + LOCK_TTL_MS;
   for (;;) {
-    if (hasUsableAccess()) return getAccessToken();
+    if (!force && hasUsableAccess()) return getAccessToken();
 
     const now = Date.now();
     const held = Number(localStorage.getItem(LOCK_KEY) || 0);
@@ -151,25 +175,33 @@ async function performRefresh() {
 
   try {
     // Another tab may have finished while we waited for the lock.
-    if (hasUsableAccess()) return getAccessToken();
+    if (!force && hasUsableAccess()) return getAccessToken();
 
     const refreshToken = getRefreshToken();
-    if (!refreshToken) throw new ApiError(401, 'NO_SESSION', 'انتهت الجلسة، الرجاء تسجيل الدخول');
+    if (!refreshToken) {
+      clearSession();
+      throw new ApiError(401, 'NO_SESSION', 'انتهت الجلسة، الرجاء تسجيل الدخول');
+    }
 
-    const data = (
-      await transport('/auth/refresh', { method: 'POST', body: { refreshToken }, auth: false })
-    ).data;
+    try {
+      const data = (
+        await transport('/auth/refresh', { method: 'POST', body: { refreshToken }, auth: false })
+      ).data;
 
-    setSession(data);
-    return data.accessToken;
+      setSession(data);
+      return data.accessToken;
+    } catch (err) {
+      clearSession();
+      throw err;
+    }
   } finally {
     if (lockedByUs) localStorage.removeItem(LOCK_KEY);
   }
 }
 
-export function refreshSession() {
+export function refreshSession(force = false) {
   if (!inFlightRefresh) {
-    inFlightRefresh = performRefresh().finally(() => {
+    inFlightRefresh = performRefresh(force).finally(() => {
       inFlightRefresh = null;
     });
   }
@@ -197,6 +229,16 @@ export async function api(path, options = {}) {
   try {
     return await transport(path, { ...rest, auth });
   } catch (err) {
+    const isRevoked =
+      err instanceof ApiError &&
+      err.status === 401 &&
+      (err.code === 'SESSION_EXPIRED' || err.code === 'TOKEN_REVOKED');
+
+    if (isRevoked) {
+      clearSession();
+      throw err;
+    }
+
     const retryable = err instanceof ApiError && err.status === 401 && auth && !_retried;
     if (!retryable) {
       if (err instanceof ApiError && err.status === 401) clearSession();
@@ -204,7 +246,7 @@ export async function api(path, options = {}) {
     }
 
     try {
-      await refreshSession();
+      await refreshSession(true);
       return await transport(path, { ...rest, auth, _retried: true });
     } catch (refreshErr) {
       clearSession();
@@ -235,14 +277,56 @@ export const authApi = {
       clearSession();
     }
   },
+  logoutAll: async () => {
+    try {
+      await post('/auth/logout-all', {});
+    } finally {
+      clearSession();
+    }
+  },
 };
 
 /* ------------------------------------------------------------- google oauth */
 
-/** Full-page navigation: the flow cookie must be written on the API origin. */
-export function beginGoogleLogin(loginHint) {
-  const qs = loginHint ? `?login_hint=${encodeURIComponent(loginHint)}` : '';
-  window.location.assign(`${API_URL}/auth/google${qs}`);
+/**
+ * Starts Google OAuth.
+ * Defaults to a centered popup window so the main web application never leaves the current page.
+ * If popups are blocked by the browser, it seamlessly falls back to standard page redirection.
+ */
+export function beginGoogleLogin(loginHint, options = {}) {
+  const isPopup = options.popup !== false;
+  const params = new URLSearchParams();
+  if (loginHint) params.set('login_hint', loginHint);
+  if (options.prompt) params.set('prompt', options.prompt);
+  if (isPopup) params.set('popup', '1');
+
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const url = `${API_URL}/auth/google${qs}`;
+
+  if (isPopup) {
+    const width = 500;
+    const height = 620;
+    const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+    const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+    try {
+      localStorage.setItem('sarhny_in_popup_flow', '1');
+      const popup = window.open(
+        url,
+        'sarhny_google_auth',
+        `width=${width},height=${height},left=${left},top=${top},status=0,menubar=0,toolbar=0,resizable=1`,
+      );
+      if (popup && !popup.closed) {
+        popup.focus?.();
+        return popup;
+      }
+    } catch {
+      /* popup blocked: fall through to redirect */
+    }
+  }
+
+  // Fallback to standard redirect
+  localStorage.removeItem('sarhny_in_popup_flow');
+  window.location.assign(url);
 }
 
 export const googleApi = {
@@ -261,6 +345,12 @@ export const usersApi = {
   updateMe: (body) => patch('/users/me', body),
   changePassword: (body) => patch('/users/me/password', body),
   deleteAccount: (password) => del('/users/me', password ? { password } : {}),
+  /** Upload an avatar image file (multipart/form-data). Returns { user }. */
+  uploadAvatar: (file) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    return api('/users/me/avatar', { method: 'PATCH', body: formData });
+  },
 };
 
 export const messagesApi = {
@@ -282,6 +372,15 @@ export const messagesApi = {
   archive: (id, archived) => patch(`/messages/${id}/archive`, { archived }),
   /** Recipient override: let a shield-flagged message through. */
   release: (id) => patch(`/messages/${id}/release`),
+  /** Recipient replies to message */
+  reply: (id, { content, isPublic = false }) =>
+    post(`/messages/${id}/reply`, { content, isPublic }),
+  /** Anonymous sender loads thread */
+  getThread: (conversationKey) =>
+    get(`/messages/thread/${encodeURIComponent(conversationKey)}`, { auth: false }),
+  /** Anonymous sender replies in thread */
+  replyThread: (conversationKey, { content }) =>
+    post(`/messages/thread/${encodeURIComponent(conversationKey)}/reply`, { content }, { auth: false }),
   remove: (id) => del(`/messages/${id}`),
 };
 
@@ -329,11 +428,17 @@ export const reportsApi = {
 
 export const adminApi = {
   stats: () => get('/admin/stats'),
-  users: ({ page = 1, limit = 20 } = {}) => get(`/admin/users?page=${page}&limit=${limit}`),
+  users: ({ page = 1, limit = 20, search = '', role = '' } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (search) qs.set('search', search);
+    if (role) qs.set('role', role);
+    return get(`/admin/users?${qs}`);
+  },
   getUser: (id) => get(`/admin/users/${id}`),
   setUserActive: (id, isActive) => patch(`/admin/users/${id}`, { isActive }),
   setUserRole: (id, role) => patch(`/admin/users/${id}/role`, { role }),
   resetUserPassword: (id, newPassword) => patch(`/admin/users/${id}/password`, { newPassword }),
+  revokeUserSessions: (id) => post(`/admin/users/${id}/revoke-sessions`, {}),
   deleteUser: (id) => del(`/admin/users/${id}`),
   reports: ({ page = 1, limit = 20, status } = {}) => {
     const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -346,6 +451,8 @@ export const adminApi = {
     if (action) qs.set('action', action);
     return get(`/admin/audit-logs?${qs}`);
   },
+  systemHealth: () => get('/admin/system'),
+  flushCache: () => post('/admin/system/flush-cache', {}),
 };
 
 export const passwordApi = {

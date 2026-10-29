@@ -41,19 +41,26 @@ export default function ReportModal({ open, onClose, messageId }) {
       <form onSubmit={submit}>
         {error && <Alert type="error">{error}</Alert>}
 
-        <Field
-          as="select"
-          label="سبب البلاغ"
-          name="reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        >
-          {REPORT_REASONS.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </Field>
+        <div className="field">
+          <label className="field__label">سبب البلاغ:</label>
+          <div className="radio-group" role="radiogroup" aria-label="سبب البلاغ">
+            {REPORT_REASONS.map((r) => (
+              <label
+                key={r.value}
+                className={`radio-card ${reason === r.value ? 'radio-card--selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="reason"
+                  value={r.value}
+                  checked={reason === r.value}
+                  onChange={() => setReason(r.value)}
+                />
+                <span className="radio-card__label">{r.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
 
         <Field
           as="textarea"

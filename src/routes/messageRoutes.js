@@ -8,10 +8,27 @@ import {
   sendMessageSchema,
   listMessagesQuerySchema,
   messageIdParamSchema,
+  conversationKeyParamSchema,
   archiveMessageSchema,
+  recipientReplySchema,
+  senderThreadReplySchema,
 } from '../validators/messageValidator.js';
 
 const router = Router();
+
+// Anonymous conversation thread endpoints (Sender side, accessed via secret conversationKey)
+router.get(
+  '/thread/:conversationKey',
+  validate({ params: conversationKeyParamSchema }),
+  messageController.getThread,
+);
+
+router.post(
+  '/thread/:conversationKey/reply',
+  messageLimiter(),
+  validate({ params: conversationKeyParamSchema, body: senderThreadReplySchema }),
+  messageController.replyThread,
+);
 
 // POST /api/v1/messages/:username — public, anonymous (rate limited).
 router.post(
@@ -50,6 +67,14 @@ router.patch(
   authMiddleware,
   validate({ params: messageIdParamSchema }),
   messageController.releaseMessage,
+);
+
+// Recipient reply to message (private thread or public story card)
+router.post(
+  '/:id/reply',
+  authMiddleware,
+  validate({ params: messageIdParamSchema, body: recipientReplySchema }),
+  messageController.replyMessage,
 );
 
 router.delete(

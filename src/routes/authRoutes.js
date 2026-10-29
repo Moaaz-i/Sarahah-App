@@ -26,8 +26,11 @@ router.post('/login', authLimiter(), validate({ body: loginSchema }), authContro
 // POST /api/v1/auth/refresh
 router.post('/refresh', authLimiter(), validate({ body: refreshSchema }), authController.refresh);
 
-// POST /api/v1/auth/logout
+// POST /api/v1/auth/logout — logout from current device
 router.post('/logout', authMiddleware, validate({ body: logoutSchema }), authController.logout);
+
+// POST /api/v1/auth/logout-all — logout from all devices
+router.post('/logout-all', authMiddleware, authController.logoutAll);
 
 // GET /api/v1/auth/me
 router.get('/me', authMiddleware, authController.me);

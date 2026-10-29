@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
@@ -6,6 +7,7 @@ import { encodeCursor, decodeCursor } from '../utils/pagination.js';
 import env from '../config/env.js';
 import { analyze } from './harmShieldService.js';
 import { MESSAGE_CATEGORIES } from '../constants/feedback.js';
+import { notifyUserNewMessage, notifyThreadNewReply } from '../sockets/socketService.js';
 
 /**
  * Anonymous message service.
@@ -13,26 +15,12 @@ import { MESSAGE_CATEGORIES } from '../constants/feedback.js';
  * - The sender is NEVER stored (no field, no ref, no IP, no user agent).
  * - Message content is never logged.
  * - Knowing a message id is useless without being the owner (404, not 403).
- *
- * FEEDBACK LAYER:
- * The category comes from the sender, the harm label comes from a local rule
- * engine over the same text. Neither adds sender signal, so the anonymity
- * guarantee above still holds exactly as before.
  */
 
-/**
- * Normalise a category against the recipient's policy.
- * Returns the category to store, or throws when the recipient does not accept
- * that kind of note. The reply is deliberately generic: it must not reveal
- * whether an account exists or what its settings are beyond what the sender
- * can already see on the public page.
- */
 const resolveCategory = (requested, recipient) => {
   const reception = recipient.reception ?? {};
   const wanted = MESSAGE_CATEGORIES[requested?.toUpperCase?.()] ?? requested;
 
-  // A recipient who paused receiving is handled before this point; here we
-  // only enforce an explicit allow-list.
   const allowed = Array.isArray(reception.allowedCategories)
     ? reception.allowedCategories
     : [];
@@ -41,9 +29,6 @@ const resolveCategory = (requested, recipient) => {
     throw AppError.notFound('Recipient not found or not accepting messages');
   }
 
-  // The owner asked senders to declare what kind of note this is. Honouring
-  // that is the whole point of a published policy, so it is enforced here and
-  // not only in the UI.
   if (reception.requireCategory && (!requested || !MESSAGE_CATEGORIES[requested?.toUpperCase?.()])) {
     throw AppError.badRequest('This page asks you to choose a note type before sending');
   }
@@ -53,11 +38,9 @@ const resolveCategory = (requested, recipient) => {
 
 /**
  * Send an anonymous message to a username.
- * Returns a generic response: the caller learns nothing about the recipient
- * beyond what they already knew (their public username).
  */
 export const sendMessage = async (
-  { username, content, category, promptId },
+  { username, content, category, promptId, identityClue = 'none', voiceUrl = null },
   { fingerprint, now = new Date() } = {},
 ) => {
   const recipient = await User.findOne({
@@ -66,22 +49,18 @@ export const sendMessage = async (
     deletedAt: null,
   });
 
-  // Same answer for "no such user" and "user does not accept messages":
-  // avoids using this endpoint to enumerate accounts.
   if (!recipient || !recipient.isReceivingMessages) {
     throw AppError.notFound('Recipient not found or not accepting messages');
   }
 
   const reception = recipient.reception ?? {};
 
-  // A paused inbox answers exactly like a missing one.
   if (reception.isPaused) {
     throw AppError.notFound('Recipient not found or not accepting messages');
   }
 
   const resolvedCategory = resolveCategory(category, recipient);
 
-  // Per-recipient flood control (in addition to the IP rate limiter).
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const recentCount = await Message.countDocuments({
     recipient: recipient._id,
@@ -92,41 +71,49 @@ export const sendMessage = async (
     throw AppError.tooManyRequests('This user is receiving too many messages right now');
   }
 
-  // Local rule-based screen. Never blocks the send — it only decides whether
-  // the note lands in the inbox or in the recipient's quarantine section.
-  const screening = reception.enableShield === false ? { harmLabel: null, harmConfidence: 0 } : analyze(content);
+  const screening = reception.enableShield === false ? { harmLabel: null, harmConfidence: 0, sentiment: 'neutral' } : analyze(content);
   const quarantined =
     Boolean(screening.harmLabel) && reception.quarantineFlagged !== false;
 
-  await Message.create({
+  const conversationKey = crypto.randomBytes(24).toString('hex');
+
+  const createdMessage = await Message.create({
     recipient: recipient._id,
-    content, // already trimmed + length-checked by the validator
+    content,
     category: resolvedCategory,
+    identityClue: identityClue || 'none',
     promptId: promptId ? String(promptId).slice(0, 64) : null,
     harmLabel: screening.harmLabel ?? null,
     harmConfidence: screening.confidence ?? 0,
+    sentiment: screening.sentiment ?? 'neutral',
     isQuarantined: quarantined,
+    conversationKey,
+    voiceUrl: voiceUrl || null,
   });
 
-  // NOTE: `fingerprint` is only used for rate accounting and is never
-  // persisted on the message.
+  // Real-time notification to the recipient if online
+  notifyUserNewMessage(String(recipient._id), {
+    _id: String(createdMessage._id),
+    content: createdMessage.content,
+    category: createdMessage.category,
+    identityClue: createdMessage.identityClue,
+    sentiment: createdMessage.sentiment,
+    isQuarantined: createdMessage.isQuarantined,
+    voiceUrl: createdMessage.voiceUrl,
+    createdAt: createdMessage.createdAt,
+  });
+
   void fingerprint;
 
-  return { sent: true, message: 'Message delivered anonymously' };
+  return {
+    sent: true,
+    message: 'Message delivered anonymously',
+    conversationKey,
+  };
 };
 
 /**
  * List the authenticated user's inbox (newest first).
- * Cursor pagination: pass the `nextCursor` of the previous page as `cursor`.
- */
-/**
- * Build the inbox filter.
- * `quarantined` is tri-state on purpose:
- * - true  -> ONLY the quarantine section
- * - false -> ONLY normal messages (this is the default inbox)
- * - undef -> the same as false
- * A flagged note never appears in the ordinary list; it has to be released
- * deliberately, so the recipient is never ambushed by it.
  */
 export const listMessages = async (
   userId,
@@ -144,9 +131,6 @@ export const listMessages = async (
     filter._id = { $lt: cursorId };
   }
 
-  // Fetch one extra item to know whether another page exists.
-  // NOTE: sorted by _id only (ObjectIds are time-ordered) so the cursor
-  // pagination is stable and cannot skip/duplicate rows.
   const docs = await Message.find(filter)
     .sort({ _id: -1 })
     .limit(limit + 1);
@@ -212,8 +196,6 @@ export const softDelete = async (userId, messageId) => {
 
 /**
  * Recipient override: let a flagged message through.
- * The harm label is deliberately KEPT — the recipient should still see why it
- * was held, but they are the one who decides what reaches their inbox.
  */
 export const releaseMessage = async (userId, messageId) => {
   const message = await Message.findOneAndUpdate(
@@ -223,6 +205,101 @@ export const releaseMessage = async (userId, messageId) => {
   );
   if (!message) throw AppError.notFound('Message not found');
   return { message };
+};
+
+/**
+ * Add a reply to a message from the recipient.
+ */
+export const addRecipientReply = async (userId, messageId, { content, isPublic = false }) => {
+  const message = await Message.findOne({ _id: messageId, recipient: userId, isDeleted: false });
+  if (!message) throw AppError.notFound('Message not found');
+
+  if (isPublic) {
+    message.publicReply = content;
+    message.publicReplyAt = new Date();
+  }
+
+  message.replies.push({
+    authorType: 'recipient',
+    content,
+    createdAt: new Date(),
+  });
+
+  await message.save();
+
+  // Real-time notification to the anonymous thread room
+  notifyThreadNewReply(message.conversationKey, {
+    authorType: 'recipient',
+    content,
+    createdAt: new Date(),
+  });
+
+  return { message: presentMessage(message) };
+};
+
+/**
+ * Fetch thread by anonymous conversation key for the sender.
+ */
+export const getThreadByConversationKey = async (conversationKey) => {
+  const message = await Message.findOne({ conversationKey, isDeleted: false })
+    .populate('recipient', 'name username avatar');
+  if (!message) throw AppError.notFound('Conversation not found');
+
+  return {
+    recipient: {
+      name: message.recipient?.name,
+      username: message.recipient?.username,
+      avatar: message.recipient?.avatar,
+    },
+    content: message.content,
+    category: message.category,
+    identityClue: message.identityClue,
+    createdAt: message.createdAt,
+    publicReply: message.publicReply,
+    publicReplyAt: message.publicReplyAt,
+    replies: message.replies,
+    voiceUrl: message.voiceUrl,
+  };
+};
+
+/**
+ * Add an anonymous reply from the sender to the thread.
+ */
+export const addSenderThreadReply = async (conversationKey, { content }) => {
+  const message = await Message.findOne({ conversationKey, isDeleted: false });
+  if (!message) throw AppError.notFound('Conversation not found');
+
+  const screen = analyze(content);
+  if (screen.harmLabel === 'threat') {
+    throw AppError.badRequest('Cannot send harmful reply');
+  }
+
+  message.replies.push({
+    authorType: 'sender',
+    content,
+    createdAt: new Date(),
+  });
+
+  // Re-flag as unread so the recipient is prompted in inbox
+  message.isRead = false;
+  await message.save();
+
+  // Real-time broadcast to thread participants
+  notifyThreadNewReply(conversationKey, {
+    authorType: 'sender',
+    content,
+    createdAt: new Date(),
+  });
+
+  // Real-time alert to recipient about thread activity
+  notifyUserNewMessage(String(message.recipient), {
+    type: 'thread_reply',
+    messageId: String(message._id),
+    content: `رد جديد في محادثة: ${content.slice(0, 50)}`,
+    createdAt: new Date(),
+  });
+
+  return getThreadByConversationKey(conversationKey);
 };
 
 /** Counts used by the inbox header. Cheap aggregation, no message text read. */
@@ -238,8 +315,6 @@ export const inboxCounts = async (userId) => {
 
 /**
  * Shape a message for the owner's UI.
- * Harm fields are included so the inbox can explain WHY something was held;
- * nothing here reveals a sender, because the document has none.
  */
 export const presentMessage = (message) => {
   const obj = typeof message.toObject === 'function' ? message.toObject() : { ...message };
@@ -247,7 +322,9 @@ export const presentMessage = (message) => {
     _id: obj._id,
     content: obj.content,
     category: obj.category ?? 'general',
+    identityClue: obj.identityClue ?? 'none',
     promptId: obj.promptId ?? null,
+    sentiment: obj.sentiment ?? 'neutral',
     harmLabel: obj.harmLabel ?? null,
     harmConfidence: obj.harmConfidence ?? 0,
     isQuarantined: Boolean(obj.isQuarantined),
@@ -257,6 +334,10 @@ export const presentMessage = (message) => {
     readAt: obj.readAt ?? null,
     isArchived: obj.isArchived,
     archivedAt: obj.archivedAt ?? null,
+    publicReply: obj.publicReply ?? null,
+    publicReplyAt: obj.publicReplyAt ?? null,
+    replies: obj.replies ?? [],
+    voiceUrl: obj.voiceUrl ?? null,
     createdAt: obj.createdAt,
   };
 };
@@ -269,6 +350,9 @@ export default {
   setArchived,
   softDelete,
   releaseMessage,
+  addRecipientReply,
+  getThreadByConversationKey,
+  addSenderThreadReply,
   inboxCounts,
   presentMessage,
 };

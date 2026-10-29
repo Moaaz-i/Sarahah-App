@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Alert from "../components/Alert.jsx";
 import Field from "../components/Field.jsx";
@@ -6,6 +6,7 @@ import GoogleButton from '../components/GoogleButton.jsx';
 import { useToast } from "../components/Toast.jsx";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
+import Logo from "../components/Logo.jsx";
 
 const RULES = [
   { test: (v) => v.length >= 8, label: '8 أحرف على الأقل' },
@@ -14,15 +15,23 @@ const RULES = [
 ];
 
 export default function Register() {
-  const { register } = useAuth();
+  const { user, register } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      navigate('/inbox', { replace: true });
+    }
+  }, [user, navigate]);
 
   const [form, setForm] = useState({ name: '', username: '', email: '', password: '' });
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
+
+  if (user) return null;
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -57,6 +66,9 @@ export default function Register() {
     <div className="page page--auth">
       <div className="auth-card">
         <header className="auth-card__head">
+          <div className="auth-card__logo">
+            <Logo size={46} showText={false} />
+          </div>
           <h1>إنشاء حساب</h1>
           <p>اسم مستخدم، بريد، وكلمة مرور — لا أكثر.</p>
         </header>

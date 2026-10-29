@@ -246,7 +246,7 @@
           ]
         },
         {
-          "name": "Logout",
+          "name": "Logout (current device)",
           "request": {
             "auth": {
               "type": "bearer",
@@ -277,7 +277,7 @@
                 "logout"
               ]
             },
-            "description": "Revokes the refresh token server-side. Requires a valid access token.",
+            "description": "Revokes the active refresh token and blacklists it in Redis.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
@@ -320,6 +320,37 @@
             "description": "Returns the authenticated user. 401 for a missing, expired, forged or disabled-account token."
           },
           "response": []
+        },
+        {
+          "name": "Logout (all devices)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout-all"
+              ]
+            },
+            "description": "Revokes all refresh tokens, increments user tokenVersion, and invalidates active sessions in Redis so every device is logged out."
+          },
+          "response": []
         }
       ]
     },
@@ -336,7 +367,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/google?login_hint=demo@example.com",
+              "raw": "{{baseUrl}}/api/v1/auth/google?login_hint=demo@example.com&prompt=select_account&popup=0",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -349,7 +380,18 @@
               "query": [
                 {
                   "key": "login_hint",
-                  "value": "demo@example.com"
+                  "value": "demo@example.com",
+                  "description": "Pre-fills the Google account picker"
+                },
+                {
+                  "key": "prompt",
+                  "value": "select_account",
+                  "description": "select_account | consent | none"
+                },
+                {
+                  "key": "popup",
+                  "value": "0",
+                  "description": "1 if opening in a popup window, 0 for regular redirect"
                 }
               ]
             },
@@ -588,6 +630,48 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload avatar",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/avatar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "avatar"
+              ]
+            },
+            "description": "Upload a profile picture (image file). Accepted: PNG, JPEG, GIF, WebP — max 2 MB. The file is validated by magic bytes, so renamed scripts/HTML are refused. The stored reference replaces any previous avatar.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "src": []
+                }
+              ]
             }
           },
           "response": []
@@ -1234,7 +1318,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/users?page=1&limit=20",
+              "raw": "{{baseUrl}}/api/v1/admin/users?page=1&limit=20&search=&role=",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1252,6 +1336,18 @@
                 {
                   "key": "limit",
                   "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Search by username, name or email"
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Filter by user or admin"
                 }
               ]
             },
@@ -1349,6 +1445,781 @@
             "description": "Page/limit pagination with an optional exact `action` filter. Audit rows never contain secrets or message content."
           },
           "response": []
+        },
+        {
+          "name": "Get user details by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}"
+              ]
+            },
+            "description": "Returns sanitized user record by Mongo ObjectId."
+          },
+          "response": []
+        },
+        {
+          "name": "Change user role",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}",
+                "role"
+              ]
+            },
+            "description": "Promote or demote a user (user | admin)."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset user password as admin",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"NewSecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}",
+                "password"
+              ]
+            },
+            "description": "Admin directly sets a new password for the target user."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke all sessions for a user",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}/revoke-sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}",
+                "revoke-sessions"
+              ]
+            },
+            "description": "Forces a remote logout for the target user across all their devices."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete user account",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/{{targetUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}"
+              ]
+            },
+            "description": "Soft/hard delete a user account as admin."
+          },
+          "response": []
+        },
+        {
+          "name": "List reports (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reports?page=1&limit=20&status=pending",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "description": "pending | reviewed | dismissed"
+                }
+              ]
+            },
+            "description": "List abusive message reports."
+          },
+          "response": []
+        },
+        {
+          "name": "Update report status (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"reviewed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reports/{{reportId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reports",
+                "{{reportId}}"
+              ]
+            },
+            "description": "Update status of a reported message."
+          },
+          "response": []
+        },
+        {
+          "name": "System & Redis Health",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "system"
+              ]
+            },
+            "description": "Returns live metrics: Upstash Redis connection status and round-trip ping latency, MongoDB readyState, heap & memory usage, server uptime."
+          },
+          "response": []
+        },
+        {
+          "name": "Flush System Redis Cache",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/system/flush-cache",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "system",
+                "flush-cache"
+              ]
+            },
+            "description": "Purges non-persistent application keys from Redis cache safely."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 Confirm Email (OTP)",
+      "description": "Email verification via 6-digit numeric OTP codes sent over SMTP.",
+      "item": [
+        {
+          "name": "Send confirmation code (OTP)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confirm-email/send",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confirm-email",
+                "send"
+              ]
+            },
+            "description": "Sends a 6-digit numeric OTP code to the caller email address."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify confirmation code (OTP)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confirm-email/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confirm-email",
+                "verify"
+              ]
+            },
+            "description": "Verifies the 6-digit OTP code and marks the account as verified."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 Feedback (Honesty & Goals)",
+      "description": "The Useful Honesty surface: reception policy, guided prompts, the feedback mirror, and personal goals.",
+      "item": [
+        {
+          "name": "Get reception policy",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/reception",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "reception"
+              ]
+            },
+            "description": "Returns caller message reception policy and prompts."
+          },
+          "response": []
+        },
+        {
+          "name": "Update reception policy",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acceptingMessages\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/reception",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "reception"
+              ]
+            },
+            "description": "Toggle message reception on or off."
+          },
+          "response": []
+        },
+        {
+          "name": "Replace guided prompts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompts\": [\n    \"ما هي نقطة قوتي؟\",\n    \"ما هو الشيء الذي ينبغي أن أطوره؟\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/reception/prompts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "reception",
+                "prompts"
+              ]
+            },
+            "description": "Sets custom guided feedback prompt questions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get feedback mirror",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/mirror",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "mirror"
+              ]
+            },
+            "description": "Returns feedback analysis and sentiment insights."
+          },
+          "response": []
+        },
+        {
+          "name": "List feedback goals",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List personal growth and feedback goals."
+          },
+          "response": []
+        },
+        {
+          "name": "Create feedback goal",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"تحسين مهارات التواصل\",\n  \"description\": \"التركيز على الاستماع الفعال وتقبل الملاحظات\",\n  \"targetDate\": \"2026-12-31T23:59:59.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals"
+              ]
+            },
+            "description": "Create a new personal growth goal."
+          },
+          "response": []
+        },
+        {
+          "name": "List due goals",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals/due",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals",
+                "due"
+              ]
+            },
+            "description": "Returns goals that are due or overdue."
+          },
+          "response": []
+        },
+        {
+          "name": "Get goal by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals/{{goalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals",
+                "{{goalId}}"
+              ]
+            },
+            "description": "Get single goal details."
+          },
+          "response": []
+        },
+        {
+          "name": "Update goal",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"in_progress\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals/{{goalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals",
+                "{{goalId}}"
+              ]
+            },
+            "description": "Update goal status or fields."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete goal",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/feedback/goals/{{goalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feedback",
+                "goals",
+                "{{goalId}}"
+              ]
+            },
+            "description": "Delete a feedback goal."
+          },
+          "response": []
         }
       ]
     }
@@ -1418,6 +2289,12 @@
       "key": "googleCode",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "goalId",
+      "value": "",
+      "type": "string",
+      "description": "ID of a personal feedback goal"
     }
   ]
 }

@@ -9,25 +9,29 @@ Built with **Node.js + Express + MongoDB (Mongoose) + JWT + Zod**.
 
 ## 1. Features
 
-- **Auth**: register / login / logout / me / refresh
-  - short-lived **Access Token** (JWT, HS256, issuer + audience checked)
-  - **Refresh Token** (opaque, stored only as a SHA-256 hash) with
-    **rotation** and **reuse detection** (replay revokes the whole session)
-  - **Sign in with Google** (OAuth 2.0 / OpenID Connect, `state` + PKCE +
-    `nonce`, server-side ID-token verification) with explicit account
-    **linking / unlinking** (see [section 10](#10-google-sign-in-oauth-20--openid-connect))
-- **Users**: public profile, own-profile update, password change, account
-  deletion with a documented data-retention policy
-- **Messages**: send anonymously (no sender identity stored at all), inbox
-  with **cursor pagination** + filters, read / archive / **logical** delete
-- **Reports**: anonymous **and** authenticated reporters, duplicate + flood
-  control, admin-only moderation with **AuditLog** entries
-- **Password reset**: one-time, hashed, TTL-checked tokens. **Requesting a
-  link is currently disabled** (no delivery channel — §11)
-- **Admin**: user listing, enable/disable, audit logs, stats
-- **Security**: Helmet, CORS allow-list, body limits, request ids,
-  NoSQL-injection sanitizing, strict Zod validation, per-route rate limiting,
-  unified error envelope with no internal leaks
+- **Auth & Session Management**:
+  - Short-lived **Access Token** (JWT, HS256, issuer + audience checked).
+  - **Refresh Token** (opaque, stored only as a SHA-256 hash) with **rotation** and **reuse detection**.
+  - **Single Device Logout (`/auth/logout`)**: Revokes the active refresh token and blacklists it in Redis.
+  - **All Devices Logout (`/auth/logout-all`)**: Revokes all refresh tokens, increments the user's `tokenVersion` / `passwordChangedAt`, and invalidates active session keys in Redis across all devices.
+  - **Sign in with Google** (OAuth 2.0 / OpenID Connect, `state` + PKCE + `nonce`, server-side ID-token verification) with interactive account picker menu, popup mode with cross-window broadcast handoff, and explicit account linking/unlinking.
+- **Security & Integrity**:
+  - **Magic Number File Inspection**: Avatar uploads through Multer are verified against real binary signature bytes (PNG, JPEG, GIF, WebP), rejecting polyglots, tampered scripts, or executables disguised as images.
+  - **Redis Layer**: Integrated Upstash Redis service for instant token revocation, blacklisting, session synchronization, and system caching.
+  - Helmet, strict CORS allow-list, body limits, request IDs, NoSQL-injection sanitization, strict Zod validation, and per-route rate limiting.
+- **Users & Profile**:
+  - Public profile with dynamic QR Code sharing & downloading.
+  - Avatar image uploads (`multipart/form-data`) with strict binary verification and auto-cleanup of previous files.
+  - Password change with instant session revocation, profile update, and soft deletion retention policy.
+- **Email Confirmation (OTP)**:
+  - 6-digit numeric OTP codes sent over SMTP (`/confirm-email/send` and `/confirm-email/verify`).
+- **Messages & Feedback**:
+  - Anonymous messaging (no sender identity stored at all), cursor-paginated inbox with unread/archived filters.
+  - Useful Honesty & Guided Feedback: custom reception prompts, feedback mirror sentiment insights, and personal goals tracking (`/feedback/*`).
+- **Reports & Moderation**:
+  - Anonymous and authenticated reporters, flood control, admin moderation with audit trail.
+- **Admin Control Center**:
+  - Multi-tab management: platform metrics & counters, paginated user management with search and role filters, user role elevation/demotion, remote session revocation, admin password reset, abuse report moderation, audit logs, and real-time **System & Redis Health** diagnostics with one-click cache flushing.
 
 ---
 
@@ -35,6 +39,7 @@ Built with **Node.js + Express + MongoDB (Mongoose) + JWT + Zod**.
 
 - Node.js **>= 18** (developed on 22)
 - MongoDB **>= 6** (local or Atlas)
+- Redis / Upstash Redis (optional but recommended for distributed token blacklisting & caching)
 - npm >= 9
 
 ---
@@ -64,7 +69,15 @@ error lists the missing names only (never their values).
 | `JWT_REFRESH_SECRET` | **yes** | dev-only value | Refresh token secret |
 | `JWT_REFRESH_EXPIRES_IN` | no | `7d` | Refresh token lifetime |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | no | `sarhny-api` / `sarhny-app` | JWT claims verified on every request |
-| `CLIENT_ORIGIN` | prod | – | Comma-separated CORS allow-list |
+| `CLIENT_ORIGIN` | prod | `http://localhost:5173` | Comma-separated CORS allow-list |
+| `CLIENT_URL` | no | `http://localhost:5173` | Frontend URL for email links |
+| `UPSTASH_REDIS_REST_URL` | no | – | Upstash Redis REST URL for session blacklist & cache |
+| `UPSTASH_REDIS_REST_TOKEN` | no | – | Upstash Redis REST token |
+| `SMTP_HOST` / `SMTP_PORT` | no | `smtp.gmail.com` / `587` | SMTP mail server for OTP verification |
+| `SMTP_SECURE` | no | `false` | TLS/SSL toggle for SMTP |
+| `SMTP_USER` / `SMTP_PASS` | no | – | SMTP authentication credentials |
+| `MAIL_FROM` | no | `Sar7ny <no-reply@sarhny.local>` | Outgoing mail sender signature |
+| `OTP_LENGTH` / `OTP_TTL_MINUTES` | no | `6` / `15` | Verification OTP settings |
 | `BCRYPT_ROUNDS` | no | `10` | Password hashing cost |
 | `PASSWORD_RESET_TTL_MINUTES` | no | `15` | Reset token lifetime |
 | `MAX_MESSAGES_PER_RECIPIENT_PER_DAY` | no | `20` | Per-recipient flood control |
@@ -73,9 +86,9 @@ error lists the missing names only (never their values).
 | `FINGERPRINT_SALT` | prod | dev-only value | Salt for anonymous fingerprints |
 | `RATE_LIMIT_ENABLED` | no | `true` | Master switch for rate limiting |
 | `RATE_LIMIT_*` | no | see `.env.example` | Window + per-route limits |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | no | – | Google OAuth. The feature stays **disabled** until all three are set |
-| `OAUTH_COOKIE_SECRET` | prod* | dev-only value | HMAC key for the short-lived OAuth flow cookie (*required in production once the Google variables are set) |
-| `OAUTH_REDIRECT_URL` | no | – | SPA landing page; enables the redirect/handoff mode instead of JSON tokens |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | no | – | Google OAuth credentials (required to enable Google sign-in) |
+| `OAUTH_COOKIE_SECRET` | prod* | dev-only value | HMAC key for the short-lived OAuth flow cookie |
+| `OAUTH_REDIRECT_URL` | no | `http://localhost:5173/auth/google/callback` | SPA landing page for redirect/handoff exchange |
 | `OAUTH_FLOW_TTL_MS` / `OAUTH_HANDOFF_TTL_MS` | no | `600000` / `60000` | OAuth state and handoff lifetimes |
 
 > Never commit a real `.env`. It is already listed in `.gitignore`.
@@ -198,55 +211,30 @@ Auth: **`Authorization: Bearer <accessToken>`**
 
 ### Postman collection
 
-[`sarhny-api.postman_collection.json`](sarhny-api.postman_collection.json) covers **all 33 endpoints** in
-8 folders (Health & Docs, Auth, Google OAuth, Users, Messages, Reports,
-Password, Admin).
+[`sarhny-api.postman_collection.json`](sarhny-api.postman_collection.json) covers **all 48 endpoints** in
+10 folders:
+1. **00 Health & Docs**: System health and OpenAPI contract
+2. **01 Auth**: Register, login, refresh, single-device logout, all-device logout, current user
+3. **02 Google OAuth**: Start flow, callback, handoff exchange, link/unlink providers
+4. **03 Users**: Profile self-service, avatar upload (binary magic numbers), password change, deletion, public profile
+5. **04 Messages**: Anonymous sending, cursor inbox, mark-read, archive, logical delete
+6. **05 Reports**: Message abuse reports, admin review, status moderation
+7. **06 Password**: Forgot password, one-time reset token verification
+8. **07 Admin**: Multi-tab control center, user inspection & role elevation, admin password reset, remote session revocation, audit trail, reports moderation, real-time Redis latency & system health, cache purge
+9. **08 Confirm Email (OTP)**: Send 6-digit confirmation OTP over SMTP, verify code
+10. **09 Feedback (Honesty & Goals)**: Message reception toggle, custom guided prompts, sentiment mirror insights, personal goal tracking
 
 Import it into Postman, then:
 
-1. Run **01 Auth → Register** (pick a unique `username`/`email` first).
+1. Run **01 Auth → Register** (or **Login**).
 2. The response scripts store `accessToken`, `refreshToken`, `userId` and
    `username` as collection variables, so every bearer request works right
    away.
 3. Set `recipientUsername` to an account you control, send an anonymous
    message, then read `data.messages[0]._id` from **List my inbox** into
-   `{{messageId}}`. Do the same with `data.report.id` for `{{reportId}}`
-   (reports expose the identifier as `id`, not `_id`).
+   `{{messageId}}`. Do the same with `data.report.id` for `{{reportId}}`.
 
-Every request was executed against a running server to confirm the paths,
-methods, bodies and status codes below match the real API.
-
-### Response formats
-
-Success:
-
-```json
-{ "success": true, "message": "Operation completed successfully", "data": {} }
-```
-
-Error:
-
-```json
-{ "success": false, "message": "Human readable message", "code": "VALIDATION_ERROR", "requestId": "…" }
-```
-
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `VALIDATION_ERROR` | 400 | Input failed schema validation (`details[]` included) |
-| `BAD_REQUEST` | 400 | Well-formed but not acceptable |
-| `UNAUTHENTICATED` | 401 | Missing/invalid access token |
-| `INVALID_CREDENTIALS` | 401 | Wrong email/username or password (generic) |
-| `INVALID_TOKEN` / `TOKEN_EXPIRED` / `TOKEN_ALREADY_USED` | 401 | Token problems |
-| `ACCOUNT_DISABLED` | 401 | Account is disabled |
-| `REFRESH_TOKEN_REUSE` | 401 | Refresh token replay → all sessions revoked |
-| `FORBIDDEN` | 403 | Authenticated but not allowed |
-| `NOT_FOUND` | 404 | Missing **or not visible to you** |
-| `USERNAME_TAKEN` / `EMAIL_TAKEN` / `DUPLICATE_REPORT` / `CONFLICT` | 409 | Conflict |
-| `PAYLOAD_TOO_LARGE` | 413 | Body over the 50 kB limit |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `INTERNAL_ERROR` | 500 | Unexpected failure (details hidden in production) |
-
-Full endpoint documentation: [`docs/openapi.yaml`](docs/openapi.yaml).
+---
 
 ### Auth — `/api/v1/auth`
 
@@ -255,95 +243,93 @@ Full endpoint documentation: [`docs/openapi.yaml`](docs/openapi.yaml).
 | POST | `/register` | – | Create account (role is always `user`) |
 | POST | `/login` | – | Login with `identifier` (email **or** username) |
 | POST | `/refresh` | – | Rotate refresh token, new pair issued |
-| POST | `/logout` | ✅ | Revoke all refresh tokens of the user |
+| POST | `/logout` | ✅ | Revoke active refresh token on current device |
+| POST | `/logout-all` | ✅ | Revoke all refresh tokens & drop sessions across all devices |
 | GET | `/me` | ✅ | Current user (sanitized) |
 
-```bash
-curl -X POST localhost:3000/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Sara","username":"sara","email":"sara@example.com","password":"Password123"}'
-```
-
-Password policy: **8–72 chars, at least one letter and one number.**
+---
 
 ### Google sign-in — `/api/v1/auth/google`
 
-These are the only endpoints that deal with Google directly.
-
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/` | – | Starts the flow: sets the flow cookie, `302` to Google |
-| GET | `/callback` | – | Google redirects here; verifies everything, then answers |
-| POST | `/exchange` | – | `{ handoff }` → token pair (only when `OAUTH_REDIRECT_URL` is set) |
-| POST | `/link` | ✅ | `{ authorizationUrl }` — start linking Google to **your** account |
-| GET | `/links` | ✅ | Linked providers + `hasPassword` |
-| DELETE | `/link` | ✅ | Unlink Google (refused if it is the only sign-in method) |
+| GET | `/` | – | Starts flow: `?login_hint=...&prompt=...&popup=1`, sets flow cookie, 302s to Google |
+| GET | `/callback` | – | Google redirects here; verifies state, PKCE, nonce; redirects to SPA with handoff |
+| POST | `/exchange` | – | `{ handoff }` → token pair (redirect mode) |
+| POST | `/link` | ✅ | `{ authorizationUrl }` — start linking Google to authenticated account |
+| GET | `/links` | ✅ | Linked providers list + `hasPassword` |
+| DELETE | `/link` | ✅ | Unlink Google account |
 
-Two response modes for `GET /callback`:
-
-- **JSON (default)** — the standard success envelope with `user` +
-  `accessToken` + `refreshToken`. Convenient for API clients and popup-based
-  front-ends.
-- **Redirect (`OAUTH_REDIRECT_URL` set)** — `302` to that URL with a
-  **one-time `handoff` code**; the SPA then calls `POST /exchange`. Tokens are
-  never placed in a URL (no Referer/history/log leakage), and the code is
-  single-use, hashed at rest and expires after `OAUTH_HANDOFF_TTL_MS`.
-
-**Google is never contacted by the tests**: a fake OIDC client is injected
-through `setGoogleOidcClient()`, and the fake still performs real PKCE
-verification, so a broken verifier/challenge pairing fails the suite.
+---
 
 ### Users — `/api/v1/users`
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/:username` | – | Public profile (username, name, bio, avatar, createdAt) |
-| PATCH | `/me` | ✅ | Update `name` / `bio` / `avatar` only |
-| PATCH | `/me/password` | ✅ | Change password → revokes every session |
-| DELETE | `/me` | ✅ | Delete account (see policy below) |
+| PATCH | `/me` | ✅ | Update `name` / `bio` only |
+| PATCH | `/me/avatar` | ✅ | Upload profile picture (`multipart/form-data`, magic bytes verified) |
+| PATCH | `/me/password` | ✅ | Change password → revokes sessions |
+| DELETE | `/me` | ✅ | Soft delete account with data retention policy |
+
+---
+
+### Email Confirmation (OTP) — `/api/v1/confirm-email`
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| POST | `/send` | ✅ | Send 6-digit confirmation OTP to user email via SMTP |
+| POST | `/verify` | ✅ | Verify OTP code and activate `isVerified: true` |
+
+---
 
 ### Messages — `/api/v1/messages`
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/:username` | – | Send an anonymous message (rate limited) |
-| GET | `/` | ✅ | Own inbox — `limit`, `cursor`, `isRead`, `isArchived` |
-| GET | `/:id` | ✅ | One message (owner only, `404` otherwise) |
-| PATCH | `/:id/read` | ✅ | Mark as read, sets `readAt` |
-| PATCH | `/:id/archive` | ✅ | Body `{ "archived": true|false }` |
-| DELETE | `/:id` | ✅ | **Logical** delete (row kept, hidden from inbox) |
+| POST | `/:username` | – | Send anonymous message (no sender identity stored) |
+| GET | `/` | ✅ | Own inbox — cursor pagination + filters (`isRead`, `isArchived`) |
+| GET | `/:id` | ✅ | Single message (owner only) |
+| PATCH | `/:id/read` | ✅ | Mark as read |
+| PATCH | `/:id/archive` | ✅ | Archive / unarchive |
+| DELETE | `/:id` | ✅ | Logical delete |
 
-Pagination is **cursor-based**; use `data.pagination.nextCursor` for the
-next page. Only `true`/`false` are accepted for the boolean filters.
+---
 
-### Reports — `/api/v1/reports`
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| POST | `/` | optional | Report a message (anonymous or logged-in) |
-| GET | `/` | admin | List + filter by `status`/`reason`, page pagination |
-| GET | `/:id` | admin | Single report |
-| PATCH | `/:id/status` | admin | Update status (audited) |
-
-Reasons: `harassment`, `threats`, `hate_speech`, `spam`, `sexual_content`,
-`other`.
-Statuses: `pending`, `reviewed`, `resolved`, `rejected`.
-
-### Password — `/api/v1/password`
+### Useful Honesty & Feedback — `/api/v1/feedback`
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/forgot` | – | **503 `PASSWORD_RESET_DISABLED`** — disabled, see §11 |
-| POST | `/reset` | – | `{ token, newPassword }` — one-time, TTL-checked |
+| GET | `/reception` | ✅ | Read message reception settings |
+| PUT | `/reception` | ✅ | Update reception policy |
+| PUT | `/reception/prompts` | ✅ | Set custom guided questions for senders |
+| GET | `/mirror` | ✅ | Feedback mirror sentiment analysis |
+| GET | `/goals` | ✅ | List personal feedback goals |
+| POST | `/goals` | ✅ | Create personal feedback goal |
+| GET | `/goals/due` | ✅ | List due or overdue goals |
+| GET | `/goals/:id` | ✅ | Get single goal details |
+| PATCH | `/goals/:id` | ✅ | Update goal status or fields |
+| DELETE | `/goals/:id` | ✅ | Delete feedback goal |
+
+---
 
 ### Admin — `/api/v1/admin` (admin role required)
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/stats` | Counters (users, messages, reports…) |
-| GET | `/users` | Paginated user list (sanitized) |
-| PATCH | `/users/:id` | `{ isActive: true|false }` — enable/disable |
-| GET | `/audit-logs` | Audit trail (optional `action` filter) |
+| GET | `/stats` | Instance counters (users, messages, reports) |
+| GET | `/users` | Paginated users list with `search` & `role` filters |
+| GET | `/users/:id` | Get full user details |
+| PATCH | `/users/:id` | `{ isActive: true\|false }` — enable/disable account |
+| PATCH | `/users/:id/role` | Change role between `user` and `admin` |
+| PATCH | `/users/:id/password` | Reset user password directly |
+| POST | `/users/:id/revoke-sessions` | Force logout user across all devices |
+| DELETE | `/users/:id` | Soft/hard delete user account |
+| GET | `/reports` | List abuse reports with `status` filter |
+| PATCH | `/reports/:id` | Moderate report (`reviewed`, `dismissed`) |
+| GET | `/audit-logs` | Security audit trail with `action` filter |
+| GET | `/system` | Real-time Redis latency & status, MongoDB, memory, uptime |
+| POST | `/system/flush-cache` | Safely clear non-persistent Redis cache |
 
 ---
 
@@ -352,9 +338,12 @@ Statuses: `pending`, `reviewed`, `resolved`, `rejected`.
 - **Password storage**: bcrypt (cost from `BCRYPT_ROUNDS`), `select:false`.
 - **Access tokens**: HS256 with `issuer` + `audience` + `algorithm`
   verification; 15-minute default lifetime.
-- **Refresh tokens**: opaque 48-byte random strings, stored **only** as
-  SHA-256 digests, rotated on every use. Presenting a revoked token revokes
-  the entire session chain and writes an audit entry.
+- **Refresh tokens & session revocation**: opaque 48-byte random strings, stored **only** as
+  SHA-256 digests, rotated on every use.
+  - **Single Device Logout**: blacklists the specific refresh token in Redis.
+  - **All Devices Logout**: increments the user's `tokenVersion` / `passwordChangedAt` and invalidates active session keys in Redis, dropping all concurrent sessions across any device or browser.
+  - Presenting a revoked token triggers reuse detection, revoking the entire session chain and writing an audit log entry.
+- **Avatar Magic Number Byte Inspection**: File uploads are not trusted by MIME headers or file extensions alone. Uploaded avatars are inspected for exact Magic Number header signatures (PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `47 49 46 38`, WebP `52 49 46 46 ... 57 45 42 50`). Any polyglot, script, HTML, or executable disguised as an image is immediately rejected.
 - **Password reset**: 32-byte random token, stored hashed, single-use via an
   atomic `findOneAndUpdate` (safe under concurrency), validated against
   `expiresAt` + `usedAt` at use time (TTL deletion alone is not trusted
@@ -445,8 +434,10 @@ is off.
 3. **APIs & Services → OAuth consent screen**
    - User type: **External** for a normal app (Internal only works inside a
      Google Workspace org).
-   - Fill in the app name, support email and the scopes
-     `openid`, `email`, `profile`.
+   - Fill in the app name, support email and the scopes `openid`, `email`, `profile`.
+   - **App Logo**: Google Cloud Console requires a square logo (120x120 px). Ready-to-upload files are located in the project root:
+     - [`google-cloud-logo-120x120.png`](google-cloud-logo-120x120.png) (exact 120x120 px PNG for Google Cloud Console)
+     - [`google-cloud-logo.png`](google-cloud-logo.png) & [`google-cloud-logo.jpg`](google-cloud-logo.jpg) (high-resolution branding assets)
    - While the app is in **Testing** status, only users you add as
      *test users* can sign in. Click **Publish app** for general use.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**
@@ -687,12 +678,7 @@ npm run test:watch
   body and never sets a cookie. That is readable by any injected script; the
   usual trade-off of "persist the session" vs "survive XSS". Moving the
   refresh token into an `HttpOnly` cookie would remove this.
-- **`avatar` is a URL string, not an upload**: the backend validates it with
-  `/^https?:\/\/\S+$/` (max 500 chars) and stores it as-is — it never fetches,
-  proxies or verifies the image, so a dead or hostile link is simply stored.
-  There is no multipart upload endpoint; `client/` therefore offers a URL
-  field plus preset `https://` avatars, and falls back to initials when an
-  image fails to load.
+- **`avatar`** accepts an image URL, a `data:` URI (built-in presets), or an uploaded file via `PATCH /api/v1/users/me/avatar` (`multipart/form-data`, PNG/JPEG/GIF/WebP, max 2 MB). Uploaded files are verified by magic bytes and stored under `/uploads/avatars/`; the old file is reclaimed when replaced. A dead link degrades to initials in the UI.
 
 ---
 

@@ -1,16 +1,8 @@
+import http from 'http';
 import env from './config/env.js';
 import connectDB, { closeDatabase } from './config/database.js';
 import app from './app.js';
-
-/**
- * Process entry point.
- * - Validates the environment.
- * - Connects to MongoDB.
- * - Only listens AFTER a successful connection.
- * - Shuts down gracefully on SIGTERM/SIGINT (stop accepting connections,
- *   close the HTTP server, then close the DB connection).
- * NOTE: app.js is side-effect free, so tests can import it directly.
- */
+import { initSocket } from './sockets/socketService.js';
 
 let server = null;
 let shuttingDown = false;
@@ -24,8 +16,12 @@ const start = async () => {
     process.exit(1);
   }
 
-  server = app.listen(env.port, () => {
-    console.log(`Server listening on http://localhost:${env.port} [${env.nodeEnv}]`);
+  // Create standard HTTP server and attach Socket.io
+  server = http.createServer(app);
+  initSocket(server);
+
+  server.listen(env.port, () => {
+    console.log(`Server listening on http://localhost:${env.port} [${env.nodeEnv}] (Socket.io active)`);
   });
 
   // If the HTTP server itself fails to start, exit non-zero.

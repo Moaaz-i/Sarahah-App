@@ -3,7 +3,14 @@
  * Nothing else in the app should hand a raw user document to res.json().
  */
 
-const SENSITIVE_FIELDS = ['password', '__v', 'passwordResetToken', 'tokenHash', 'deletedAt'];
+const SENSITIVE_FIELDS = [
+  'password',
+  '__v',
+  'passwordResetToken',
+  'tokenHash',
+  'deletedAt',
+  'tokensRevokedAt',
+];
 
 /** Remove sensitive fields from a user document/object. */
 export const sanitizeUser = (user) => {

@@ -64,12 +64,14 @@ export const generatePkce = async () => {
  * constructed from env); it is NEVER read from the incoming request, which is
  * what prevents an open-redirect / authorization-code theft.
  */
-export const buildAuthorizationUrl = ({ state, codeChallenge, nonce, loginHint }) => {
+export const buildAuthorizationUrl = ({ state, codeChallenge, nonce, loginHint, prompt }) => {
   const client = getClient();
+
+  const resolvedPrompt = prompt !== undefined ? prompt : loginHint ? undefined : env.oauth.prompt;
 
   const url = client.generateAuthUrl({
     access_type: 'online',
-    prompt: env.oauth.prompt,
+    ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     scope: env.oauth.scopes,
     state,
     nonce,

@@ -3,8 +3,8 @@ import * as adminService from '../services/adminService.js';
 
 /** GET /api/v1/admin/users — admins only. */
 export const listUsers = asyncHandler(async (req, res) => {
-  const { page, limit } = req.query;
-  const result = await adminService.listUsers(req.user, { page, limit });
+  const { page, limit, search, role } = req.query;
+  const result = await adminService.listUsers(req.user, { page, limit, search, role });
   res.status(200).json({ success: true, message: 'Users fetched successfully', data: result });
 });
 
@@ -80,10 +80,30 @@ export const listAuditLogs = asyncHandler(async (req, res) => {
   });
 });
 
+/** POST /api/v1/admin/users/:id/revoke-sessions */
+export const revokeUserSessions = asyncHandler(async (req, res) => {
+  const result = await adminService.revokeUserSessions(req.user, req.params.id, {
+    requestId: req.requestId,
+  });
+  res.status(200).json({ success: true, message: 'All user sessions revoked successfully', data: result });
+});
+
 /** GET /api/v1/admin/stats */
 export const getStats = asyncHandler(async (req, res) => {
   const result = await adminService.getStats(req.user);
   res.status(200).json({ success: true, message: 'Stats fetched successfully', data: result });
+});
+
+/** GET /api/v1/admin/system */
+export const getSystemHealth = asyncHandler(async (req, res) => {
+  const result = await adminService.getSystemHealth(req.user);
+  res.status(200).json({ success: true, message: 'System health fetched successfully', data: result });
+});
+
+/** POST /api/v1/admin/system/flush-cache */
+export const flushSystemCache = asyncHandler(async (req, res) => {
+  const result = await adminService.flushSystemCache(req.user, { requestId: req.requestId });
+  res.status(200).json({ success: true, message: 'System cache flushed successfully', data: result });
 });
 
 export default {
@@ -93,8 +113,11 @@ export default {
   setUserRole,
   resetUserPassword,
   deleteUser,
+  revokeUserSessions,
   listReports,
   updateReportStatus,
   listAuditLogs,
   getStats,
+  getSystemHealth,
+  flushSystemCache,
 };

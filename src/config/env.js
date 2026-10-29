@@ -133,6 +133,14 @@ export const env = Object.freeze({
   }),
 
 
+  redis: Object.freeze({
+    url: process.env.UPSTASH_REDIS_REST_URL || '',
+    token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
+    get enabled() {
+      return Boolean(this.url && this.token);
+    },
+  }),
+
   security: Object.freeze({
     bcryptRounds: int(process.env.BCRYPT_ROUNDS, 10),
     passwordResetTtlMinutes: int(process.env.PASSWORD_RESET_TTL_MINUTES, 15),

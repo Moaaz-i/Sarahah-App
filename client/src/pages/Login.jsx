@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
 import { ApiError } from '../lib/api.js';
@@ -7,17 +7,27 @@ import Field from '../components/Field.jsx';
 import Alert from '../components/Alert.jsx';
 import GoogleButton from '../components/GoogleButton.jsx';
 
+import Logo from '../components/Logo.jsx';
+
 export default function Login() {
-  const { signIn } = useAuth();
+  const { user, signIn } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
 
+  useEffect(() => {
+    if (user) {
+      navigate('/inbox', { replace: true });
+    }
+  }, [user, navigate]);
+
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
+
+  if (user) return null;
 
   const oauthError = params.get('error');
   const oauthMessage = params.get('error_description');
@@ -50,6 +60,9 @@ export default function Login() {
     <div className="page page--auth">
       <div className="auth-card">
         <header className="auth-card__head">
+          <div className="auth-card__logo">
+            <Logo size={46} showText={false} />
+          </div>
           <h1>تسجيل الدخول</h1>
           <p>ادخل ببريدك أو اسم مستخدمك.</p>
         </header>

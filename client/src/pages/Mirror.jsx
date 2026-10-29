@@ -219,7 +219,7 @@ export default function Mirror() {
 
       <div className="stat-grid">
         <Stat icon="✉️" label="ملاحظة" value={totals.messages} />
-        <Stat icon=" unread" label="غير مقروءة" value={totals.unread} tone="info" />
+        <Stat icon="📬" label="غير مقروءة" value={totals.unread} tone="info" />
         <Stat icon="🛡️" label="محفوظة لك" value={totals.flagged} tone="warn" />
         <Stat icon="✅" label="أدرجتها في وردك" value={totals.released} tone="good" />
       </div>
