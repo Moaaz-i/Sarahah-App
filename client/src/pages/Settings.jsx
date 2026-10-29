@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { usersApi, googleApi, confirmEmailApi, ApiError } from '../lib/api.js';
+import { authApi, usersApi, googleApi, confirmEmailApi, ApiError } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useToast } from '../components/Toast.jsx';
 import Field from '../components/Field.jsx';
@@ -185,6 +185,85 @@ export default function Settings() {
       setConfirmMsg({ type: 'error', text: err.message });
     } finally {
       setConfirmBusy(false);
+    }
+  };
+
+  /* ------------------------------------------------ 2-step verification */
+  const [twoFactorStep, setTwoFactorStep] = useState(1);
+  const [twoFactorOtp, setTwoFactorOtp] = useState('');
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+  const [twoFactorMsg, setTwoFactorMsg] = useState(null);
+  const [twoFactorCooldown, setTwoFactorCooldown] = useState(0);
+
+  const startTwoFactorCooldown = () => {
+    setTwoFactorCooldown(60);
+    const iv = setInterval(() => {
+      setTwoFactorCooldown((s) => {
+        if (s <= 1) { clearInterval(iv); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const sendTwoFactorEnableOtp = async () => {
+    setTwoFactorBusy(true);
+    setTwoFactorMsg(null);
+    try {
+      await authApi.twoFactor.sendOtp();
+      setTwoFactorStep(2);
+      startTwoFactorCooldown();
+      setTwoFactorMsg({ type: 'success', text: 'تم إرسال رمز التحقق إلى بريدك الإلكتروني.' });
+      toast.success('تم إرسال رمز التحقق');
+    } catch (err) {
+      setTwoFactorMsg({ type: 'error', text: err.message });
+      toast.error(err.message);
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
+  const verifyAndEnableTwoFactor = async (e) => {
+    e.preventDefault();
+    setTwoFactorBusy(true);
+    setTwoFactorMsg(null);
+    try {
+      const { data } = await authApi.twoFactor.verifyEnable({ code: twoFactorOtp.trim() });
+      setTwoFactorMsg({ type: 'success', text: 'تم تفعيل التحقق بخطوتين بنجاح لحسابك!' });
+      setTwoFactorStep(1);
+      setTwoFactorOtp('');
+      toast.success('تم تفعيل التحقق بخطوتين بنجاح');
+      if (data?.user) setUser(data.user);
+      else {
+        const fresh = await reload();
+        if (fresh) setUser(fresh);
+      }
+    } catch (err) {
+      setTwoFactorMsg({ type: 'error', text: err.message });
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
+  const disableTwoFactor = async () => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في تعطيل التحقق بخطوتين؟ سيقل مستوى أمان حسابك.')) {
+      return;
+    }
+    setTwoFactorBusy(true);
+    setTwoFactorMsg(null);
+    try {
+      const { data } = await authApi.twoFactor.disable();
+      setTwoFactorMsg({ type: 'success', text: 'تم تعطيل التحقق بخطوتين بنجاح.' });
+      toast.success('تم تعطيل التحقق بخطوتين');
+      if (data?.user) setUser(data.user);
+      else {
+        const fresh = await reload();
+        if (fresh) setUser(fresh);
+      }
+    } catch (err) {
+      setTwoFactorMsg({ type: 'error', text: err.message });
+      toast.error(err.message);
+    } finally {
+      setTwoFactorBusy(false);
     }
   };
 
@@ -629,6 +708,107 @@ export default function Settings() {
             {pwBusy ? 'جارٍ الحفظ…' : 'تغيير كلمة المرور'}
           </button>
         </form>
+      </Section>
+
+      <Section
+        title="التحقق بخطوتين (2-Step Verification)"
+        description="إضافة طبقة أمان إضافية لحسابك تتطلب إدخال رمز مؤقت يُرسل إلى بريدك عند كل تسجيل دخول."
+      >
+        {twoFactorMsg && (
+          <Alert type={twoFactorMsg.type === 'error' ? 'error' : 'success'}>
+            {twoFactorMsg.text}
+          </Alert>
+        )}
+
+        {user?.twoFactorEnabled ? (
+          <div className="row-between">
+            <div>
+              <p>
+                <strong style={{ color: 'var(--c-brand, #4285F4)' }}>✓ التحقق بخطوتين مفعّل</strong>
+              </p>
+              <p className="muted">
+                حسابك محمي. يُطلب منك إدخال رمز تأكيد يُرسل لبريدك الإلكتروني عند تسجيل الدخول من أي متصفح أو جهاز.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={disableTwoFactor}
+              disabled={twoFactorBusy}
+            >
+              {twoFactorBusy ? 'جارٍ التعطيل…' : 'تعطيل التحقق بخطوتين'}
+            </button>
+          </div>
+        ) : (
+          <>
+            {twoFactorStep === 1 ? (
+              <div className="row-between">
+                <div>
+                  <p>التحقق بخطوتين غير مفعّل حالياً.</p>
+                  <p className="muted">
+                    سنرسل رمز تحقق إلى بريدك الإلكتروني <strong>({user?.email})</strong> لتأكيد التفعيل.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={sendTwoFactorEnableOtp}
+                  disabled={twoFactorBusy}
+                >
+                  {twoFactorBusy ? 'جارٍ الإرسال…' : 'تفعيل التحقق بخطوتين'}
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={verifyAndEnableTwoFactor} className="form-narrow">
+                <p className="muted">
+                  أدخل رمز التحقق (6 أرقام) المرسل إلى <strong>{user?.email}</strong> لتأكيد التفعيل.
+                </p>
+                <Field
+                  label="رمز التحقق (6 أرقام)"
+                  name="twoFactorOtp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className="ltr text-center"
+                  value={twoFactorOtp}
+                  onChange={(e) => setTwoFactorOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="123456"
+                  required
+                  autoFocus
+                />
+                <div className="form-actions">
+                  <button
+                    type="submit"
+                    className="btn btn--primary"
+                    disabled={twoFactorBusy || twoFactorOtp.length !== 6}
+                  >
+                    {twoFactorBusy ? 'جارٍ التحقق والتفعيل…' : 'تأكيد وتفعيل'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={sendTwoFactorEnableOtp}
+                    disabled={twoFactorBusy || twoFactorCooldown > 0}
+                  >
+                    {twoFactorCooldown > 0 ? `إعادة الإرسال (${twoFactorCooldown}s)` : 'إعادة الإرسال'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => {
+                      setTwoFactorStep(1);
+                      setTwoFactorOtp('');
+                      setTwoFactorMsg(null);
+                    }}
+                    disabled={twoFactorBusy}
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
       </Section>
 
       <Section

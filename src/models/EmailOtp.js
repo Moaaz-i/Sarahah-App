@@ -22,7 +22,12 @@ const emailOtpSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Purpose is required'],
       enum: {
-        values: ['password_reset', 'email_confirm'],
+        values: [
+          'password_reset',
+          'email_confirm',
+          'two_factor_enable',
+          'two_factor_login',
+        ],
         message: 'Invalid OTP purpose',
       },
       index: true,

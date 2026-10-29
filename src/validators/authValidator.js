@@ -84,4 +84,35 @@ export const logoutSchema = z
 
 export const meParamsSchema = z.object({}).passthrough();
 
-export default { registerSchema, loginSchema, refreshSchema, logoutSchema, meParamsSchema };
+export const loginConfirmSchema = z
+  .object({
+    userId: z.string().trim().optional(),
+    loginTicket: z.string().trim().optional(),
+    identifier: z.string().trim().optional(),
+    code: z
+      .string({ required_error: 'code is required' })
+      .trim()
+      .length(6, 'code must be 6 digits'),
+  })
+  .refine((data) => data.userId || data.loginTicket || data.identifier, {
+    message: 'userId or loginTicket or identifier is required',
+  });
+
+export const twoFactorVerifySchema = z
+  .object({
+    code: z
+      .string({ required_error: 'code is required' })
+      .trim()
+      .length(6, 'code must be 6 digits'),
+  })
+  .strict();
+
+export default {
+  registerSchema,
+  loginSchema,
+  loginConfirmSchema,
+  twoFactorVerifySchema,
+  refreshSchema,
+  logoutSchema,
+  meParamsSchema,
+};

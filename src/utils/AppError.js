@@ -28,8 +28,8 @@ export default class AppError extends Error {
     return new AppError(401, code, message);
   }
 
-  static forbidden(message) {
-    return new AppError(403, ERROR_CODES.FORBIDDEN, message);
+  static forbidden(message, code = ERROR_CODES.FORBIDDEN) {
+    return new AppError(403, code, message);
   }
 
   static notFound(message) {

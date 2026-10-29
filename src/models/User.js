@@ -97,6 +97,25 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    /** Consecutive failed password attempts counter. Reset on success or ban expiry. */
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    /** Temporary ban timestamp (banned for 5 minutes after 5 failed attempts). */
+    bannedUntil: {
+      type: Date,
+      default: null,
+    },
+
+    /** 2-step verification enabled via email OTP */
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+
     tokensRevokedAt: {
       type: Date,
       default: null,

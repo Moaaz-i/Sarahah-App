@@ -102,7 +102,21 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signIn = useCallback(
-    async (credentials) => adopt((await authApi.login(credentials)).data),
+    async (credentials) => {
+      const { data } = await authApi.login(credentials);
+      if (data?.requiresTwoFactor) {
+        return data;
+      }
+      return adopt(data);
+    },
+    [adopt],
+  );
+
+  const confirmLogin = useCallback(
+    async (params) => {
+      const { data } = await authApi.loginConfirm(params);
+      return adopt(data);
+    },
     [adopt],
   );
 
@@ -133,12 +147,13 @@ export function AuthProvider({ children }) {
       signedIn: Boolean(user),
       isAdmin: user?.role === 'admin',
       signIn,
+      confirmLogin,
       register,
       signOut,
       adopt,
       reload: loadMe,
     }),
-    [user, booting, signIn, register, signOut, adopt, loadMe],
+    [user, booting, signIn, confirmLogin, register, signOut, adopt, loadMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -66,4 +66,39 @@ export const emailConfirmTemplate = (name, code, ttlMinutes) => ({
   text: `تأكيد البريد الإلكتروني — صارحني\nرمز التحقق: ${code}\nصالح لمدة ${ttlMinutes} دقيقة.`,
 });
 
-export default { passwordResetTemplate, emailConfirmTemplate };
+export const twoFactorEnableTemplate = (name, code, ttlMinutes) => ({
+  subject: 'تفعيل التحقق بخطوتين (2-Step Verification) — صارحني',
+  html: WRAP(
+    'تفعيل التحقق بخطوتين',
+    `
+    <p>مرحبًا ${name || ''}،</p>
+    <p>تلقينا طلبًا لتفعيل ميزة التحقق بخطوتين لحسابك. استخدم رمز التأكيد التالي لإكمال التفعيل:</p>
+    ${codeBlock(code)}
+    <p>هذا الرمز صالح لمدة <strong>${ttlMinutes} دقيقة</strong>.</p>
+    <p>إذا لم تطلب هذا الإجراء، يُرجى تغيير كلمة مرورك فورًا لحماية حسابك.</p>
+    `,
+  ),
+  text: `تفعيل التحقق بخطوتين — صارحني\nرمز التأكيد: ${code}\nصالح لمدة ${ttlMinutes} دقيقة.`,
+});
+
+export const twoFactorLoginTemplate = (name, code, ttlMinutes) => ({
+  subject: 'رمز تسجيل الدخول بالتحقق بخطوتين — صارحني',
+  html: WRAP(
+    'رمز تسجيل الدخول',
+    `
+    <p>مرحبًا ${name || ''}،</p>
+    <p>محاولة تسجيل دخول جديدة لحسابك تتطلب التحقق بخطوتين. استخدم الرمز التالي لتأكيد الدخول:</p>
+    ${codeBlock(code)}
+    <p>صالح للاستخدام لمرة واحدة خلال <strong>${ttlMinutes} دقيقة</strong>.</p>
+    <p>إذا لم تكن أنت من يحاول الدخول، فاحذر ولا تشارك هذا الرمز مع أي شخص.</p>
+    `,
+  ),
+  text: `رمز تأكيد الدخول — صارحني\nرمز التحقق: ${code}\nصالح لمدة ${ttlMinutes} دقيقة.`,
+});
+
+export default {
+  passwordResetTemplate,
+  emailConfirmTemplate,
+  twoFactorEnableTemplate,
+  twoFactorLoginTemplate,
+};

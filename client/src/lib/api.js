@@ -268,6 +268,12 @@ export const del = (path, body, options) => api(path, { ...options, method: 'DEL
 export const authApi = {
   register: (body) => post('/auth/register', body, { auth: false }),
   login: (body) => post('/auth/login', body, { auth: false }),
+  loginConfirm: (body) => post('/auth/login-confirm', body, { auth: false }),
+  twoFactor: {
+    sendOtp: () => post('/auth/2fa/send-otp', {}),
+    verifyEnable: (body) => post('/auth/2fa/verify-enable', body),
+    disable: () => post('/auth/2fa/disable', {}),
+  },
   me: () => get('/auth/me'),
   logout: async () => {
     const refreshToken = getRefreshToken();

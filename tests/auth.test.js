@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, createUser, signTokenFor, registerUser } from './helpers.js';
+import { api, createUser, signTokenFor, registerUser, authHeaderFor } from './helpers.js';
 
 describe('Auth', () => {
   describe('POST /api/v1/auth/register', () => {
@@ -245,6 +245,142 @@ describe('Auth', () => {
     it('requires authentication', async () => {
       const res = await api.post('/api/v1/auth/logout').send({});
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Login lockout (5 failed attempts ban for 5 minutes)', () => {
+    it('bans account for 5 minutes after 5 consecutive incorrect passwords', async () => {
+      const user = await createUser({ username: 'lockout_test', email: 'lockout@example.com' });
+
+      // First 4 failed attempts should yield 401 INVALID_CREDENTIALS
+      for (let i = 1; i <= 4; i++) {
+        const res = await api.post('/api/v1/auth/login').send({
+          identifier: 'lockout@example.com',
+          password: 'WrongPassword!',
+        });
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe('INVALID_CREDENTIALS');
+      }
+
+      // 5th failed attempt should trigger 403 ACCOUNT_TEMPORARILY_BANNED
+      const fifthRes = await api.post('/api/v1/auth/login').send({
+        identifier: 'lockout@example.com',
+        password: 'WrongPassword!',
+      });
+      expect(fifthRes.status).toBe(403);
+      expect(fifthRes.body.code).toBe('ACCOUNT_TEMPORARILY_BANNED');
+
+      // Subsequent attempt even with correct password is still rejected with 403
+      const blockedRes = await api.post('/api/v1/auth/login').send({
+        identifier: 'lockout@example.com',
+        password: 'Password123',
+      });
+      expect(blockedRes.status).toBe(403);
+      expect(blockedRes.body.code).toBe('ACCOUNT_TEMPORARILY_BANNED');
+
+      // After 5 minutes elapse, user should be able to log in again
+      const { default: UserModel } = await import('../src/models/User.js');
+      await UserModel.updateOne(
+        { _id: user._id },
+        { bannedUntil: new Date(Date.now() - 1000) },
+      );
+
+      const loginAgain = await api.post('/api/v1/auth/login').send({
+        identifier: 'lockout@example.com',
+        password: 'Password123',
+      });
+      expect(loginAgain.status).toBe(200);
+      expect(loginAgain.body.data.accessToken).toBeTruthy();
+
+      const freshUser = await UserModel.findById(user._id);
+      expect(freshUser.failedLoginAttempts).toBe(0);
+      expect(freshUser.bannedUntil).toBeNull();
+    });
+  });
+
+  describe('2-step verification (2FA)', () => {
+    it('enables 2FA via OTP flow and requires OTP on subsequent logins', async () => {
+      const { default: UserModel } = await import('../src/models/User.js');
+      const { default: EmailOtpModel } = await import('../src/models/EmailOtp.js');
+      const { default: otpService } = await import('../src/services/otpService.js');
+
+      const { authorization, user } = await authHeaderFor({ email: 'twofa@example.com' });
+
+      // 1) Request 2FA OTP
+      const sendRes = await api
+        .post('/api/v1/auth/2fa/send-otp')
+        .set(authorization);
+      expect(sendRes.status).toBe(200);
+      expect(sendRes.body.success).toBe(true);
+
+      const enableOtpDoc = await EmailOtpModel.findOne({
+        user: user._id,
+        purpose: 'two_factor_enable',
+      }).sort({ createdAt: -1 });
+      expect(enableOtpDoc).toBeTruthy();
+
+      // Create a known OTP code for testing verify-enable
+      const enableCode = await otpService.createOtpForTests(user._id, 'two_factor_enable');
+
+      // 2) Verify OTP to enable 2FA
+      const enableRes = await api
+        .post('/api/v1/auth/2fa/verify-enable')
+        .set(authorization)
+        .send({ code: enableCode });
+
+      expect(enableRes.status).toBe(200);
+      expect(enableRes.body.data.user.twoFactorEnabled).toBe(true);
+
+      const updatedUser = await UserModel.findById(user._id);
+      expect(updatedUser.twoFactorEnabled).toBe(true);
+
+      // 3) Login requires OTP when 2FA is enabled
+      const loginRes = await api.post('/api/v1/auth/login').send({
+        identifier: 'twofa@example.com',
+        password: 'Password123',
+      });
+
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.data.requiresTwoFactor).toBe(true);
+      expect(loginRes.body.data.loginTicket).toBeTruthy();
+      expect(loginRes.body.data.userId).toBe(String(user._id));
+
+      const loginOtpDoc = await EmailOtpModel.findOne({
+        user: user._id,
+        purpose: 'two_factor_login',
+      }).sort({ createdAt: -1 });
+      expect(loginOtpDoc).toBeTruthy();
+
+      // Create a known OTP code for testing login-confirm
+      const loginCode = await otpService.createOtpForTests(user._id, 'two_factor_login');
+
+      // 4) Login confirmation endpoint verifies OTP and returns tokens
+      const confirmRes = await api.post('/api/v1/auth/login-confirm').send({
+        userId: user._id,
+        loginTicket: loginRes.body.data.loginTicket,
+        code: loginCode,
+      });
+
+      expect(confirmRes.status).toBe(200);
+      expect(confirmRes.body.data.accessToken).toBeTruthy();
+      expect(confirmRes.body.data.refreshToken).toBeTruthy();
+      expect(confirmRes.body.data.user.username).toBe(user.username);
+
+      // 5) Disable 2FA
+      const disableRes = await api
+        .post('/api/v1/auth/2fa/disable')
+        .set('Authorization', `Bearer ${confirmRes.body.data.accessToken}`);
+      expect(disableRes.status).toBe(200);
+      expect(disableRes.body.data.user.twoFactorEnabled).toBe(false);
+
+      // 6) Normal login without 2FA receives tokens directly
+      const plainLogin = await api.post('/api/v1/auth/login').send({
+        identifier: 'twofa@example.com',
+        password: 'Password123',
+      });
+      expect(plainLogin.status).toBe(200);
+      expect(plainLogin.body.data.accessToken).toBeTruthy();
+      expect(plainLogin.body.data.requiresTwoFactor).toBeUndefined();
     });
   });
 });

@@ -10,6 +10,8 @@ const SENSITIVE_FIELDS = [
   'tokenHash',
   'deletedAt',
   'tokensRevokedAt',
+  'failedLoginAttempts',
+  'bannedUntil',
 ];
 
 /** Remove sensitive fields from a user document/object. */
