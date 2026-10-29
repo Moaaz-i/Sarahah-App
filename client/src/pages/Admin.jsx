@@ -213,7 +213,7 @@ function UsersPanel() {
     e.preventDefault();
     setResetBusy(true);
     try {
-      await adminApi.resetUserPassword(resetModal.id, resetPw);
+      await adminApi.resetUserPassword(resetModal?._id || resetModal?.id, resetPw);
       toast.success(`تم إعادة تعيين كلمة مرور @${resetModal.username} وطرد جلساته القديمة`);
       setResetModal(null);
       setResetPw('');
@@ -227,7 +227,7 @@ function UsersPanel() {
   const doDelete = async () => {
     setDeleteBusy(true);
     try {
-      await adminApi.deleteUser(deleteModal.id);
+      await adminApi.deleteUser(deleteModal?._id || deleteModal?.id);
       toast.success(`تم حذف @${deleteModal.username}`);
       setDeleteModal(null);
       await load();

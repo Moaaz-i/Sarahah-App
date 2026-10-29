@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Message from '../models/Message.js';
 import Report from '../models/Report.js';
+import EmailOtp from '../models/EmailOtp.js';
 import AppError from '../utils/AppError.js';
 import { pageMeta } from '../utils/pagination.js';
 import { sanitizeUser } from '../utils/sanitizeUser.js';
@@ -163,10 +164,20 @@ export const deleteUser = async (admin, userId, { requestId = null } = {}) => {
     throw AppError.badRequest('You cannot delete your own account here');
   }
 
-  // Cascade: remove their messages, reports they authored.
+  // Cascade: remove messages delivered to the user, reports on those messages or filed by the user, and OTPs.
+  const userMessages = await Message.find({ recipient: user._id }).select('_id');
+  const messageIds = userMessages.map((m) => m._id);
+
   const [msgResult, reportResult] = await Promise.all([
-    Message.deleteMany({ sender: user._id }),
-    Report.deleteMany({ reporter: user._id }),
+    Message.deleteMany({ recipient: user._id }),
+    Report.deleteMany({
+      $or: [
+        { reporter: user._id },
+        { message: { $in: messageIds } },
+      ],
+    }),
+    EmailOtp.deleteMany({ user: user._id }),
+    redisService.revokeAllUserTokens(user._id),
   ]);
 
   await revokeAllForUser(user._id, { reason: 'admin_deleted' });

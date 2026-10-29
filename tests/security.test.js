@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { api, createUser, authHeaderFor, createAdmin } from './helpers.js';
+import { api, createUser, authHeaderFor, createAdmin, createMessage } from './helpers.js';
 
 describe('Security', () => {
   afterEach(() => {
@@ -209,6 +209,36 @@ describe('Security', () => {
       const { default: User } = await import('../src/models/User.js');
       const doc = await User.findById(user._id);
       expect(doc.role).toBe('user');
+    });
+
+    it('allows an admin to permanently delete a user and cascades their content', async () => {
+      const admin = await createAdmin();
+      const targetUser = await createUser({ username: 'to_be_deleted' });
+      await createMessage(targetUser._id, { content: 'Message for deleted user' });
+
+      const jwt = await import('jsonwebtoken');
+      const token = jwt.default.sign(
+        { sub: String(admin._id), role: admin.role, type: 'access' },
+        process.env.JWT_ACCESS_SECRET,
+        {
+          expiresIn: '15m',
+          issuer: process.env.JWT_ISSUER || 'sarhny-api',
+          audience: process.env.JWT_AUDIENCE || 'sarhny-app',
+          algorithm: 'HS256',
+        },
+      );
+
+      const res = await api
+        .delete(`/api/v1/admin/users/${targetUser._id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const { default: User } = await import('../src/models/User.js');
+      const { default: Message } = await import('../src/models/Message.js');
+      expect(await User.findById(targetUser._id)).toBeNull();
+      expect(await Message.countDocuments({ recipient: targetUser._id })).toBe(0);
     });
   });
 
