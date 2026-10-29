@@ -97,15 +97,13 @@ const errorMiddleware = (err, req, res, next) => {
   }
 
   // --- Unexpected error -----------------------------------------------------
-  if (!env.isProduction) {
-    console.error('[error]', err);
-  }
+  console.error(`[error] [${requestId}]`, err);
 
   return res.status(500).json({
     ...base,
-    message: ERROR_MESSAGES[ERROR_CODES.INTERNAL_ERROR],
+    message: err?.message || ERROR_MESSAGES[ERROR_CODES.INTERNAL_ERROR],
     code: ERROR_CODES.INTERNAL_ERROR,
-    ...(env.isProduction ? {} : { stack: err?.stack }),
+    details: err?.stack ? err.stack.split('\n').slice(0, 3) : undefined,
   });
 };
 
