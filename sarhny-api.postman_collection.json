@@ -160,10 +160,70 @@
                 "login"
               ]
             },
-            "description": "`identifier` accepts either the username or the email.\n\nUnknown user and wrong password return byte-identical generic 401 responses (no account enumeration).",
+            "description": "`identifier` accepts either the username or the email.\n\nUnknown user and wrong password return byte-identical generic 401 responses (no account enumeration).\n\n**Account Lockout**: 5 consecutive incorrect passwords temporarily ban the account for 5 minutes (`ACCOUNT_TEMPORARILY_BANNED`, HTTP 403).\n\n**2-Step Verification (2FA)**:\n- If 2FA is enabled: Returns `{ requiresTwoFactor: true, userId, loginTicket, email }` and sends a 6-digit OTP code to the email.\n- If 2FA is disabled: Returns tokens immediately without extra steps.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"demo_user\",\n  \"password\": \"Password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data) {",
+                  "    if (body.data.requiresTwoFactor) {",
+                  "        if (body.data.loginTicket) pm.collectionVariables.set('loginTicket', body.data.loginTicket);",
+                  "        if (body.data.userId) pm.collectionVariables.set('userId', body.data.userId);",
+                  "    } else {",
+                  "        if (body.data.accessToken) pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "        if (body.data.refreshToken) pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "        if (body.data.user && body.data.user._id) pm.collectionVariables.set('userId', body.data.user._id);",
+                  "        if (body.data.user && body.data.user.username) pm.collectionVariables.set('username', body.data.user.username);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Confirmation (2FA)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login-confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login-confirm"
+              ]
+            },
+            "description": "Completes login when 2-Step Verification is enabled on the account. Requires the 6-digit OTP code sent to user email and either `loginTicket` or `userId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"loginTicket\": \"{{loginTicket}}\",\n  \"code\": \"123456\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -189,6 +249,144 @@
               }
             }
           ]
+        },
+        {
+          "name": "2FA - Send OTP to Enable",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/2fa/send-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "2fa",
+                "send-otp"
+              ]
+            },
+            "description": "Sends a 6-digit OTP code to the authenticated user's email to initiate enabling 2-step verification.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2FA - Verify and Enable",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/2fa/verify-enable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "2fa",
+                "verify-enable"
+              ]
+            },
+            "description": "Verifies the 6-digit OTP code and enables 2-step verification (`twoFactorEnabled: true`) for the authenticated user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2FA - Disable",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/2fa/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "2fa",
+                "disable"
+              ]
+            },
+            "description": "Disables 2-step verification (`twoFactorEnabled: false`) for the authenticated user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         },
         {
           "name": "Refresh tokens",

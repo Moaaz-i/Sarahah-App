@@ -287,6 +287,14 @@ paths:
       tags: [Auth]
       security: []
       summary: Login with email or username
+      description: |
+        Authenticates with username or email + password.
+
+        **Account Lockout**: 5 consecutive failed password attempts temporarily ban the account for 5 minutes (`ACCOUNT_TEMPORARILY_BANNED`, HTTP 403).
+
+        **2-Step Verification (2FA)**:
+        - If 2FA is enabled: Returns `{ requiresTwoFactor: true, userId, loginTicket, email }` and sends a 6-digit OTP code to user's email.
+        - If 2FA is disabled: Issues access and refresh tokens directly.
       requestBody:
         required: true
         content:
@@ -300,7 +308,62 @@ paths:
                 password: { type: string }
       responses:
         '200':
-          description: Logged in
+          description: Logged in or 2FA challenge initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: '#/components/schemas/SafeUser' }
+                          accessToken: { type: string }
+                          refreshToken: { type: string }
+                          tokenType: { type: string, example: Bearer }
+                          expiresIn: { type: integer, example: 900 }
+                          requiresTwoFactor: { type: boolean, example: true }
+                          loginTicket: { type: string }
+                          userId: { type: string }
+                          email: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: Account temporarily banned after 5 failed login attempts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      code: { type: string, example: ACCOUNT_TEMPORARILY_BANNED }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/login-confirm:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Confirm login with 2-step verification OTP
+      description: |
+        Completes login when 2-step verification is enabled by validating the 6-digit OTP code sent to user's email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                userId: { type: string }
+                loginTicket: { type: string }
+                identifier: { type: string }
+                code: { type: string, minLength: 6, maxLength: 6, example: "123456" }
+      responses:
+        '200':
+          description: Logged in successfully
           content:
             application/json:
               schema:
@@ -318,7 +381,83 @@ paths:
                           expiresIn: { type: integer, example: 900 }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/2fa/send-otp:
+    post:
+      tags: [Auth]
+      summary: Send OTP code to enable 2-step verification
+      description: Sends a 6-digit OTP to the authenticated user's email to verify identity before enabling 2FA.
+      responses:
+        '200':
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sent: { type: boolean }
+                          expiresInMinutes: { type: integer, example: 5 }
+                          message: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/2fa/verify-enable:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and enable 2-step verification
+      description: Verifies the 6-digit OTP sent to user's email and marks `twoFactorEnabled: true`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 6, maxLength: 6, example: "123456" }
+      responses:
+        '200':
+          description: 2-step verification enabled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          twoFactorEnabled: { type: boolean, example: true }
+                          user: { $ref: '#/components/schemas/SafeUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /api/v1/auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Disable 2-step verification
+      description: Disables 2-step verification (`twoFactorEnabled: false`) for the authenticated user.
+      responses:
+        '200':
+          description: 2-step verification disabled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          twoFactorEnabled: { type: boolean, example: false }
+                          user: { $ref: '#/components/schemas/SafeUser' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /api/v1/auth/refresh:
     post:

@@ -241,7 +241,11 @@ Import it into Postman, then:
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | POST | `/register` | – | Create account (role is always `user`) |
-| POST | `/login` | – | Login with `identifier` (email **or** username) |
+| POST | `/login` | – | Login with `identifier` (email **or** username). 5 failed password attempts trigger 5-minute ban. If 2FA enabled, sends OTP |
+| POST | `/login-confirm` | – | Complete 2-step-verification login with 6-digit OTP code |
+| POST | `/2fa/send-otp` | ✅ | Send 6-digit OTP code to email to initiate enabling 2FA |
+| POST | `/2fa/verify-enable` | ✅ | Verify OTP code and enable 2-step-verification (`twoFactorEnabled: true`) |
+| POST | `/2fa/disable` | ✅ | Disable 2-step-verification |
 | POST | `/refresh` | – | Rotate refresh token, new pair issued |
 | POST | `/logout` | ✅ | Revoke active refresh token on current device |
 | POST | `/logout-all` | ✅ | Revoke all refresh tokens & drop sessions across all devices |
