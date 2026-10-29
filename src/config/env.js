@@ -69,9 +69,7 @@ if (missing.length > 0) {
 }
 
 const devSecret = (name) =>
-  isProduction
-    ? undefined // never default a secret in production
-    : process.env[name] || `dev_only_${name}_not_for_production`;
+  process.env[name] || (isProduction ? undefined : `dev_only_${name}_not_for_production`);
 
 const csv = (value) =>
   String(value || '')

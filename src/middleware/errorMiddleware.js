@@ -101,9 +101,9 @@ const errorMiddleware = (err, req, res, next) => {
 
   return res.status(500).json({
     ...base,
-    message: err?.message || ERROR_MESSAGES[ERROR_CODES.INTERNAL_ERROR],
+    message: ERROR_MESSAGES[ERROR_CODES.INTERNAL_ERROR],
     code: ERROR_CODES.INTERNAL_ERROR,
-    details: err?.stack ? err.stack.split('\n').slice(0, 3) : undefined,
+    ...(env.isProduction ? {} : { stack: err?.stack }),
   });
 };
 
