@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "type": "module",
   "scripts": {
+    "build": "npm run build --prefix client",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "vitest run",
