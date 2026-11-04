@@ -12,6 +12,8 @@ import { getSocket, reauthSocket } from "../lib/socket.js";
 import Avatar from "./Avatar.jsx";
 import Logo from "./Logo.jsx";
 import { useToast } from "./Toast.jsx";
+import NotificationsCenter from "./NotificationsCenter.jsx";
+import FloatingNotification from "./FloatingNotification.jsx";
 
 function UserMenu() {
   const { user, signOut } = useAuth();
@@ -74,6 +76,22 @@ function UserMenu() {
           </div>
           <Link
             className="usermenu__item"
+            to="/conversations"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            💬 المحادثات المباشرة
+          </Link>
+          <Link
+            className="usermenu__item"
+            to="/identity-requests"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            🎭 طلبات كشف الهوية
+          </Link>
+          <Link
+            className="usermenu__item"
             to="/settings"
             role="menuitem"
             onClick={() => setOpen(false)}
@@ -120,6 +138,23 @@ const toArabicDigits = (num) => {
   return String(num).replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 };
 
+const loadSavedNotifs = (userId) => {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(`sarhny_notifs_${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveNotifs = (userId, notifs) => {
+  if (!userId) return;
+  try {
+    localStorage.setItem(`sarhny_notifs_${userId}`, JSON.stringify(notifs.slice(0, 50)));
+  } catch {}
+};
+
 const playNotificationSound = () => {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -146,6 +181,58 @@ export default function AppShell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const welcomedRef = useRef(false);
 
+  // Persistent notifications state
+  const [notifications, setNotifications] = useState(() => (user?._id ? loadSavedNotifs(user._id) : []));
+  const [floatingNotif, setFloatingNotif] = useState(null);
+
+  useEffect(() => {
+    if (user?._id) {
+      setNotifications(loadSavedNotifs(user._id));
+    } else {
+      setNotifications([]);
+      setFloatingNotif(null);
+    }
+  }, [user?._id]);
+
+  const addNotification = (item) => {
+    const notif = {
+      id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      time: new Date().toISOString(),
+      read: false,
+      ...item,
+    };
+    setNotifications((prev) => {
+      const next = [notif, ...prev];
+      if (user?._id) saveNotifs(user._id, next);
+      return next;
+    });
+    // Pop up bottom-right notification card
+    setFloatingNotif(notif);
+  };
+
+  const unreadNotifsCount = notifications.filter((n) => !n.read).length;
+
+  const handleMarkNotifRead = (id) => {
+    setNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+      if (user?._id) saveNotifs(user._id, next);
+      return next;
+    });
+  };
+
+  const handleMarkAllNotifsRead = () => {
+    setNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, read: true }));
+      if (user?._id) saveNotifs(user._id, next);
+      return next;
+    });
+  };
+
+  const handleClearAllNotifs = () => {
+    setNotifications([]);
+    if (user?._id) saveNotifs(user._id, []);
+  };
+
   // Fetch unread count on login or mount
   useEffect(() => {
     if (!user) {
@@ -157,7 +244,8 @@ export default function AppShell() {
     messagesApi.counts()
       .then((res) => {
         if (!active) return;
-        const unread = res.data?.counts?.unread || 0;
+        const countsData = res.data?.counts || res.data || {};
+        const unread = Number(countsData.unread ?? 0);
         setUnreadCount(unread);
 
         // Alert about pending unread messages upon entering
@@ -187,19 +275,41 @@ export default function AppShell() {
 
     const handleNewMessage = (payload) => {
       playNotificationSound();
-      setUnreadCount((c) => c + 1);
 
-      if (payload?.type === 'thread_reply') {
-        toast.info(payload.content || 'رد جديد في إحدى محادثاتك السرية! 💬');
+      if (payload?.type === 'conversation_message') {
+        const senderName = payload.message?.sender?.name || payload.message?.sender?.username || 'مستخدم';
+        const content = payload.message?.content || 'أرسل رسالة جديدة';
+        addNotification({
+          type: 'conversation_message',
+          title: `رسالة جديدة من ${senderName} 💬`,
+          body: content,
+          link: `/conversations/${payload.conversationId}`,
+          actionText: 'فتح المحادثة 💬',
+        });
+      } else if (payload?.type === 'thread_reply') {
+        const content = payload.content || 'رد جديد في إحدى محادثاتك السرية!';
+        addNotification({
+          type: 'thread_reply',
+          title: 'رد جديد في محادثة سرية 💬',
+          body: content,
+          link: '/inbox',
+          actionText: 'عرض الرد 📥',
+        });
       } else {
-        const preview = payload?.content
-          ? payload.content.length > 40
-            ? `${payload.content.slice(0, 40)}…`
-            : payload.content
+        // Standard anonymous Sarahah message
+        setUnreadCount((c) => c + 1);
+        const content = payload?.content
+          ? payload.content
           : payload?.voiceUrl
           ? 'رسالة صوتية مجهولة 🎙️'
-          : 'رسالة جديدة';
-        toast.info(`رسالة صراحة جديدة: "${preview}" ✨`, 6500);
+          : 'وصلتك صراحة جديدة!';
+        addNotification({
+          type: 'sarahah_message',
+          title: 'رسالة صراحة جديدة ✨',
+          body: content,
+          link: '/inbox',
+          actionText: 'فتح صندوق الوارد 📥',
+        });
       }
 
       // Notify any active page components (like Inbox)
@@ -207,6 +317,53 @@ export default function AppShell() {
     };
 
     socket.on('new_message', handleNewMessage);
+
+    const handleIdentityRequest = (payload) => {
+      playNotificationSound();
+      if (payload?.type === 'request_received') {
+        const username = payload.receiver?.username || 'مستخدم';
+        addNotification({
+          type: 'identity_request',
+          title: `طلب كشف هوية من @${username} 🎭`,
+          body: `المستلم @${username} يطلب معرفة هويتك لصراحة أرسلتها إليه`,
+          link: '/identity-requests',
+          actionText: 'قبول أو رفض 🎭',
+        });
+      } else if (payload?.type === 'request_accepted') {
+        const username = payload.sender?.username || 'المرسل';
+        addNotification({
+          type: 'request_accepted',
+          title: 'تم قبول كشف الهوية وبدء المحادثة! 🔓',
+          body: `كشف @${username} عن هويته وبدأت محادثتكما المباشرة!`,
+          link: payload.conversationId ? `/conversations/${payload.conversationId}` : '/conversations',
+          actionText: 'فتح المحادثة المباشرة 💬',
+        });
+      } else if (payload?.type === 'request_rejected') {
+        addNotification({
+          type: 'request_rejected',
+          title: 'رُفض طلب كشف الهوية 🔒',
+          body: 'اعتذر مرسل الصراحة عن كشف هويته، وستظل هويته محمية ومجهولة تماماً.',
+          link: '/identity-requests',
+          actionText: 'الاطلاع على الطلبات 🎭',
+        });
+      }
+    };
+
+    socket.on('identity_request', handleIdentityRequest);
+
+    const handleConversationCreated = (payload) => {
+      if (payload?.conversationId) {
+        addNotification({
+          type: 'conversation_message',
+          title: 'بدء محادثة مباشرة جديدة 💬',
+          body: 'تم فتح قناة تواصل مباشرة بينكما، انقر للدردشة الآن!',
+          link: `/conversations/${payload.conversationId}`,
+          actionText: 'فتح المحادثة 💬',
+        });
+      }
+    };
+
+    socket.on('conversation_created', handleConversationCreated);
 
     // Sync count updates triggered by other components (e.g. marking as read in Inbox)
     const handleCountSync = (e) => {
@@ -218,6 +375,8 @@ export default function AppShell() {
 
     return () => {
       socket.off('new_message', handleNewMessage);
+      socket.off('identity_request', handleIdentityRequest);
+      socket.off('conversation_created', handleConversationCreated);
       window.removeEventListener('sarhny:counts_updated', handleCountSync);
     };
   }, [user]);
@@ -242,12 +401,23 @@ export default function AppShell() {
                 </span>
               </NavLink>
             )}
+            {user && <NavLink to="/conversations">المحادثات</NavLink>}
+            {user && <NavLink to="/identity-requests">طلبات الهوية</NavLink>}
             {user && <NavLink to="/mirror">المرآة</NavLink>}
             {user?.role === "admin" && <NavLink to="/admin">الإدارة</NavLink>}
             {user && <NavLink to="/settings">الإعدادات</NavLink>}
           </nav>
 
           <div className="topbar__actions">
+            {!booting && user && (
+              <NotificationsCenter
+                notifications={notifications}
+                unreadCount={unreadNotifsCount}
+                onMarkAsRead={handleMarkNotifRead}
+                onMarkAllAsRead={handleMarkAllNotifsRead}
+                onClearAll={handleClearAllNotifs}
+              />
+            )}
             {!booting &&
               (user ? (
                 <UserMenu />
@@ -268,6 +438,11 @@ export default function AppShell() {
       <main className="main" key={location.pathname}>
         <Outlet />
       </main>
+
+      <FloatingNotification
+        notification={floatingNotif}
+        onDismiss={() => setFloatingNotif(null)}
+      />
 
       <footer className="footer">
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.85rem' }}>

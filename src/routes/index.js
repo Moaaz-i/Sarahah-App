@@ -8,6 +8,8 @@ import passwordRoutes from './passwordRoutes.js';
 import confirmEmailRoutes from './confirmEmailRoutes.js';
 import feedbackRoutes from './feedbackRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import identityRequestRoutes from './identityRequestRoutes.js';
+import conversationRoutes from './conversationRoutes.js';
 
 /** All API routers, mounted under /api/v1 in app.js. */
 const apiRouter = Router();
@@ -18,6 +20,8 @@ apiRouter.use('/auth/google', oauthRoutes);
 apiRouter.use('/auth', authRoutes);
 apiRouter.use('/users', userRoutes);
 apiRouter.use('/messages', messageRoutes);
+apiRouter.use('/identity-requests', identityRequestRoutes);
+apiRouter.use('/conversations', conversationRoutes);
 apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/password', passwordRoutes);
 apiRouter.use('/confirm-email', confirmEmailRoutes);

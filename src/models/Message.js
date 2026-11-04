@@ -43,6 +43,12 @@ const messageSchema = new mongoose.Schema(
       required: [true, 'Recipient is required'],
     },
 
+    sender: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      sparse: true,
+    },
+
     content: {
       type: String,
       required: [true, 'Message content is required'],
@@ -205,6 +211,14 @@ const messageSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toObject: {
+      transform: (_doc, ret) => {
+        if (!ret.sender) {
+          delete ret.sender;
+        }
+        return ret;
+      },
+    },
   },
 );
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import messageController from '../controllers/messageController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
+import optionalAuthMiddleware from '../middleware/optionalAuthMiddleware.js';
 import validate from '../middleware/validateMiddleware.js';
 import { messageLimiter } from '../middleware/rateLimitMiddleware.js';
 import {
@@ -30,9 +31,10 @@ router.post(
   messageController.replyThread,
 );
 
-// POST /api/v1/messages/:username — public, anonymous (rate limited).
+// POST /api/v1/messages/:username — public, anonymous (rate limited, optional auth captures registered sender).
 router.post(
   '/:username',
+  optionalAuthMiddleware,
   messageLimiter(),
   validate({ params: sendMessageParamsSchema, body: sendMessageSchema }),
   messageController.sendMessage,

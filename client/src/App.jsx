@@ -19,6 +19,8 @@ import Profile from "./pages/Profile.jsx";
 import Register from "./pages/Register.jsx";
 import Settings from "./pages/Settings.jsx";
 import Thread from "./pages/Thread.jsx";
+import IdentityRequests from "./pages/IdentityRequests.jsx";
+import Conversations from "./pages/Conversations.jsx";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -91,6 +93,30 @@ export default function App() {
                   element={
                     <ProtectedRoute>
                       <Inbox />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="conversations"
+                  element={
+                    <ProtectedRoute>
+                      <Conversations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="conversations/:id"
+                  element={
+                    <ProtectedRoute>
+                      <Conversations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="identity-requests"
+                  element={
+                    <ProtectedRoute>
+                      <IdentityRequests />
                     </ProtectedRoute>
                   }
                 />

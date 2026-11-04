@@ -9,6 +9,7 @@ import Alert from '../components/Alert.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { getSocket, joinThreadRoom, leaveThreadRoom } from '../lib/socket.js';
 import AudioPlayer from '../components/AudioPlayer.jsx';
+import EmojiPicker, { QuickEmojiBar } from '../components/EmojiPicker.jsx';
 
 export default function Thread() {
   const { conversationKey } = useParams();
@@ -208,9 +209,19 @@ export default function Thread() {
 
       {/* Reply Box for Anonymous Sender */}
       <form className="thread-reply-composer" onSubmit={handleSendReply}>
-        <label className="field__label" htmlFor="thread-reply-input">
-          أرسل ردًا إضافيًا لصاحب الصفحة (مجهول تمامًا)
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+          <label className="field__label" htmlFor="thread-reply-input" style={{ marginBottom: 0 }}>
+            أرسل ردًا إضافيًا لصاحب الصفحة (مجهول تمامًا)
+          </label>
+          <EmojiPicker
+            disabled={sending}
+            onSelect={(emoji) => setReplyText((t) => t + emoji)}
+          />
+        </div>
+        <QuickEmojiBar
+          disabled={sending}
+          onSelect={(emoji) => setReplyText((t) => t + emoji)}
+        />
         <textarea
           id="thread-reply-input"
           className="composer__input"

@@ -84,6 +84,7 @@ export const setSession = ({ accessToken, refreshToken }) => {
 export const clearSession = () => {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem('sarhny_user');
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sarhny:auth:logout'));
   }
@@ -216,9 +217,11 @@ export function refreshSession(force = false) {
  */
 export async function api(path, options = {}) {
   const { auth = true, _retried = false, ...rest } = options;
+  const isOptionalAuth = auth === 'optional';
+  const effectiveAuth = isOptionalAuth ? Boolean(hasSession()) : auth;
 
   // Proactively renew before the call instead of paying a round-trip on 401.
-  if (auth && !hasUsableAccess() && hasSession()) {
+  if (effectiveAuth && !hasUsableAccess() && hasSession()) {
     try {
       await refreshSession();
     } catch {
@@ -227,8 +230,17 @@ export async function api(path, options = {}) {
   }
 
   try {
-    return await transport(path, { ...rest, auth });
+    return await transport(path, { ...rest, auth: effectiveAuth });
   } catch (err) {
+    if (isOptionalAuth) {
+      // If optional auth failed, gracefully retry as an unauthenticated request
+      try {
+        return await transport(path, { ...rest, auth: false });
+      } catch (guestErr) {
+        throw guestErr;
+      }
+    }
+
     const isRevoked =
       err instanceof ApiError &&
       err.status === 401 &&
@@ -361,7 +373,7 @@ export const usersApi = {
 
 export const messagesApi = {
   send: (username, content) =>
-    post(`/messages/${encodeURIComponent(username)}`, content, { auth: false }),
+    post(`/messages/${encodeURIComponent(username)}`, content, { auth: 'optional' }),
   inbox: ({ limit = 20, cursor, isRead, isArchived, category, quarantined } = {}) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (cursor) qs.set('cursor', cursor);
@@ -388,6 +400,35 @@ export const messagesApi = {
   replyThread: (conversationKey, { content }) =>
     post(`/messages/thread/${encodeURIComponent(conversationKey)}/reply`, { content }, { auth: false }),
   remove: (id) => del(`/messages/${id}`),
+};
+
+export const identityRequestsApi = {
+  create: (messageId) => post('/identity-requests', { messageId }),
+  getReceived: ({ status, page = 1, limit = 20 } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) qs.set('status', status);
+    return get(`/identity-requests/received?${qs}`);
+  },
+  getSent: ({ status, page = 1, limit = 20 } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) qs.set('status', status);
+    return get(`/identity-requests/sent?${qs}`);
+  },
+  getByMessage: (messageId) => get(`/identity-requests/message/${messageId}`),
+  respond: (id, action) => patch(`/identity-requests/${id}/respond`, { action }),
+};
+
+export const conversationsApi = {
+  list: ({ page = 1, limit = 20 } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return get(`/conversations?${qs}`);
+  },
+  get: (id) => get(`/conversations/${id}`),
+  getMessages: (id, { page = 1, limit = 100 } = {}) => {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return get(`/conversations/${id}/messages?${qs}`);
+  },
+  sendMessage: (id, content) => post(`/conversations/${id}/messages`, { content }),
 };
 
 /**

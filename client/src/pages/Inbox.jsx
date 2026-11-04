@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { messagesApi, ApiError } from '../lib/api.js';
+import { Link } from 'react-router-dom';
+import { messagesApi, identityRequestsApi, ApiError } from '../lib/api.js';
 import { categoryOf, harmMeta, identityClueOf, sentimentOf } from '../lib/feedback.js';
 import { relativeTime } from '../lib/format.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -11,6 +12,9 @@ import ReportModal from '../components/ReportModal.jsx';
 import GoalModal from '../components/GoalModal.jsx';
 import StoryCardModal from '../components/StoryCardModal.jsx';
 import AudioPlayer from '../components/AudioPlayer.jsx';
+import EmojiPicker, { QuickEmojiBar } from '../components/EmojiPicker.jsx';
+import FlameStreakBanner from '../components/FlameStreakBanner.jsx';
+import FireCanvas from '../components/FireCanvas.jsx';
 
 const TABS = [
   { key: 'inbox', label: '📥 كل الوارد', filter: { isArchived: false } },
@@ -41,6 +45,35 @@ function MessageItem({ message, onChanged, onReport, onGoal, onStory, showCatego
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Identity request state initialized directly from backend batch response (zero extra network calls!)
+  const [identityReq, setIdentityReq] = useState(message.identityRequest || null);
+  const [requestingId, setRequestingId] = useState(false);
+
+  // Sync if message prop updates
+  useEffect(() => {
+    if (message.identityRequest) {
+      setIdentityReq(message.identityRequest);
+    }
+  }, [message.identityRequest]);
+
+  const handleRequestIdentity = async () => {
+    setRequestingId(true);
+    try {
+      const res = await identityRequestsApi.create(message._id);
+      setIdentityReq(res.data);
+      toast.success('تم إرسال طلب كشف الهوية إلى المرسل بنجاح! 🎭');
+    } catch (err) {
+      if (err.status === 409 && err.details?.requestId) {
+        setIdentityReq({ _id: err.details.requestId, status: err.details.status });
+        toast.info('تم تقديم طلب كشف الهوية لهذه الرسالة مسبقاً');
+      } else {
+        toast.error(err.message || 'تعذر إرسال طلب كشف الهوية');
+      }
+    } finally {
+      setRequestingId(false);
+    }
+  };
 
   // Reply drawer state
   const [replyOpen, setReplyOpen] = useState(false);
@@ -137,6 +170,22 @@ function MessageItem({ message, onChanged, onReport, onGoal, onStory, showCatego
         {message.isArchived && <span className="msg__tag">مؤرشفة</span>}
         {message.goal && <span className="msg__tag msg__tag--goal">🎯 مرتبطة بهدف</span>}
         {message.publicReply && <span className="msg__tag msg__tag--replied">💬 تم الرد</span>}
+
+        {identityReq?.status === 'pending' && (
+          <span className="msg__tag msg__tag--identity-pending">
+            ⏳ طلب الهوية قيد الانتظار
+          </span>
+        )}
+        {identityReq?.status === 'rejected' && (
+          <span className="msg__tag msg__tag--identity-rejected">
+            🔒 رُفض طلب الهوية (محمية)
+          </span>
+        )}
+        {identityReq?.status === 'accepted' && (
+          <span className="msg__tag msg__tag--identity-accepted">
+            🔓 تم كشف الهوية: {identityReq.sender?.name || 'مقبول'}
+          </span>
+        )}
       </div>
 
       <HarmNotice message={message} />
@@ -184,9 +233,19 @@ function MessageItem({ message, onChanged, onReport, onGoal, onStory, showCatego
       {/* Reply Composer Drawer */}
       {replyOpen && (
         <form className="msg__reply-drawer" onSubmit={submitReply}>
-          <label className="field__label">
-            الرد على هذه الرسالة (سيظهر للمرسل المجهول في محادثته):
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <label className="field__label" style={{ marginBottom: 0 }}>
+              الرد على هذه الرسالة (سيظهر للمرسل المجهول في محادثته):
+            </label>
+            <EmojiPicker
+              disabled={sendingReply}
+              onSelect={(emoji) => setReplyText((t) => t + emoji)}
+            />
+          </div>
+          <QuickEmojiBar
+            disabled={sendingReply}
+            onSelect={(emoji) => setReplyText((t) => t + emoji)}
+          />
           <textarea
             className="composer__input"
             rows={2}
@@ -255,6 +314,30 @@ function MessageItem({ message, onChanged, onReport, onGoal, onStory, showCatego
         >
           📸 بطاقة ستوري
         </button>
+
+        {/* Identity Request Button */}
+        {message.hasSender && !identityReq && (
+          <button
+            type="button"
+            className="btn btn--sm btn--identity-req"
+            disabled={busy || requestingId}
+            onClick={handleRequestIdentity}
+            title="طلب كشف هوية مرسل هذه الرسالة"
+          >
+            {requestingId ? 'جارٍ الإرسال…' : '🎭 طلب كشف الهوية'}
+          </button>
+        )}
+
+        {/* Private Conversation Button if Identity Accepted */}
+        {identityReq?.status === 'accepted' && identityReq.conversation && (
+          <Link
+            to={`/conversations/${identityReq.conversation._id || identityReq.conversation}`}
+            className="btn btn--sm btn--chat-link"
+            title="الانتقال إلى المحادثة المباشرة مع المرسل"
+          >
+            💬 المحادثة الخاصة
+          </Link>
+        )}
 
         {!message.isRead && (
           <button
@@ -457,21 +540,30 @@ export default function Inbox() {
   const [storyMessage, setStoryMessage] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inboxCounts, setInboxCounts] = useState({ total: 0, unread: 0, quarantined: 0 });
+  const [flameMode, setFlameMode] = useState(() => {
+    return localStorage.getItem('sarhny_flame_mode') === 'true';
+  });
+
+  const isFireActive =
+    flameMode || (inboxCounts.total || items.length) >= 5 || inboxCounts.unread >= 3;
 
   const activeTab = TABS.find((t) => t.key === tab) || TABS[0];
-
-  const reload = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const fetchCounts = useCallback(async () => {
     try {
       const res = await messagesApi.counts();
-      const counts = res.data?.counts || { total: 0, unread: 0, quarantined: 0 };
+      const counts = res.data?.counts || res.data || { total: 0, unread: 0, quarantined: 0 };
       setInboxCounts(counts);
       window.dispatchEvent(new CustomEvent('sarhny:counts_updated', { detail: counts }));
     } catch {
       // ignore
     }
   }, []);
+
+  const reload = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+    fetchCounts();
+  }, [fetchCounts]);
 
   const load = useCallback(
     async (appendCursor = null) => {
@@ -564,10 +656,28 @@ export default function Inbox() {
   }, [filteredItems]);
 
   return (
-    <div className="page page--inbox">
+    <div className={`page page--inbox ${isFireActive ? 'page--inbox-hot' : ''}`}>
       <header className="page__head">
         <div>
-          <h1>صندوق الوارد</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <h1>صندوق الوارد</h1>
+            <button
+              type="button"
+              className={`flame-mode-toggle ${isFireActive ? 'flame-mode-toggle--active' : ''}`}
+              onClick={() => {
+                setFlameMode((v) => {
+                  const next = !v;
+                  localStorage.setItem('sarhny_flame_mode', String(next));
+                  return next;
+                });
+              }}
+              title={isFireActive ? 'شعلة الحماس نشطة (انقر للتبديل)' : 'تفعيل شعلة الحماس يدويًا'}
+            >
+              <span className="flame-mode-toggle__fire-anim" />
+              <span>شعلة الحماس</span>
+              {isFireActive && <span className="flame-mode-toggle__pill">مشتعل</span>}
+            </button>
+          </div>
           <p className="muted">رسائلك الصريحة المجهولة في مكان آمن ومنظّم.</p>
         </div>
         <div className="tabs" role="tablist">
@@ -596,6 +706,13 @@ export default function Inbox() {
           })}
         </div>
       </header>
+
+      {/* Flame Streak Effect when messages are plenty */}
+      <FlameStreakBanner
+        totalMessages={inboxCounts.total || items.length}
+        unreadCount={inboxCounts.unread}
+        forceShow={flameMode}
+      />
 
       {/* Unread Messages Arrival Banner */}
       {inboxCounts.unread > 0 && tab !== 'unread' && (
@@ -841,6 +958,13 @@ export default function Inbox() {
         message={storyMessage}
         username={user?.username}
       />
+
+      {/* Atmospheric Ambient Fire Embers at the bottom of the page */}
+      {isFireActive && (
+        <div className="inbox-ambient-fire" aria-hidden="true">
+          <FireCanvas height={75} intensity={0.65} showEmbers={true} />
+        </div>
+      )}
     </div>
   );
 }

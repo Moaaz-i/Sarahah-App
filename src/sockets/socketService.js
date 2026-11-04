@@ -59,6 +59,20 @@ export const initSocket = (httpServer) => {
         socket.leave(`thread:${conversationKey.trim()}`);
       }
     });
+
+    // 5. Join direct conversation room
+    socket.on('join_conversation', (conversationId) => {
+      if (conversationId && typeof conversationId === 'string') {
+        socket.join(`conversation:${conversationId.trim()}`);
+      }
+    });
+
+    // 6. Leave direct conversation room
+    socket.on('leave_conversation', (conversationId) => {
+      if (conversationId && typeof conversationId === 'string') {
+        socket.leave(`conversation:${conversationId.trim()}`);
+      }
+    });
   });
 
   return io;
@@ -82,9 +96,36 @@ export const notifyThreadNewReply = (conversationKey, replyPayload) => {
   io.to(`thread:${String(conversationKey).trim()}`).emit('new_reply', replyPayload);
 };
 
+/**
+ * Notify all participants in a direct conversation of a new message.
+ */
+export const notifyConversationMessage = (conversationId, messagePayload) => {
+  if (!io || !conversationId) return;
+  io.to(`conversation:${String(conversationId).trim()}`).emit('conversation_message', messagePayload);
+};
+
+/**
+ * Notify a user about an identity request event (new request, accepted, rejected).
+ */
+export const notifyIdentityRequest = (userId, requestPayload) => {
+  if (!io || !userId) return;
+  io.to(`user:${String(userId)}`).emit('identity_request', requestPayload);
+};
+
+/**
+ * Notify a user that a new direct conversation was created.
+ */
+export const notifyConversationCreated = (userId, conversationPayload) => {
+  if (!io || !userId) return;
+  io.to(`user:${String(userId)}`).emit('conversation_created', conversationPayload);
+};
+
 export default {
   initSocket,
   getIO,
   notifyUserNewMessage,
   notifyThreadNewReply,
+  notifyConversationMessage,
+  notifyIdentityRequest,
+  notifyConversationCreated,
 };

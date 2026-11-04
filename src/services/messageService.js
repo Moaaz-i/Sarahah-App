@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Message from '../models/Message.js';
+import IdentityRequest from '../models/IdentityRequest.js';
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
 import { ERROR_CODES } from '../constants/messages.js';
@@ -41,7 +42,7 @@ const resolveCategory = (requested, recipient) => {
  */
 export const sendMessage = async (
   { username, content, category, promptId, identityClue = 'none', voiceUrl = null },
-  { fingerprint, now = new Date() } = {},
+  { fingerprint, senderId = null, now = new Date() } = {},
 ) => {
   const recipient = await User.findOne({
     username: String(username).toLowerCase().trim(),
@@ -79,6 +80,7 @@ export const sendMessage = async (
 
   const createdMessage = await Message.create({
     recipient: recipient._id,
+    ...(senderId ? { sender: senderId } : {}),
     content,
     category: resolvedCategory,
     identityClue: identityClue || 'none',
@@ -138,8 +140,23 @@ export const listMessages = async (
   const hasMore = docs.length > limit;
   const items = hasMore ? docs.slice(0, limit) : docs;
 
+  const messageIds = items.map((m) => m._id);
+  const identityRequests = await IdentityRequest.find({
+    message: { $in: messageIds },
+  });
+
+  const identityRequestMap = new Map();
+  for (const req of identityRequests) {
+    identityRequestMap.set(String(req.message), {
+      _id: req._id,
+      status: req.status,
+      conversation: req.conversation,
+    });
+  }
+
   return {
     messages: items,
+    identityRequestMap,
     pagination: {
       limit,
       hasMore,
@@ -316,8 +333,10 @@ export const inboxCounts = async (userId) => {
 /**
  * Shape a message for the owner's UI.
  */
-export const presentMessage = (message) => {
+export const presentMessage = (message, identityRequestMap = null) => {
   const obj = typeof message.toObject === 'function' ? message.toObject() : { ...message };
+  const reqInfo = identityRequestMap?.get?.(String(obj._id)) || obj.identityRequest || null;
+
   return {
     _id: obj._id,
     content: obj.content,
@@ -338,6 +357,8 @@ export const presentMessage = (message) => {
     publicReplyAt: obj.publicReplyAt ?? null,
     replies: obj.replies ?? [],
     voiceUrl: obj.voiceUrl ?? null,
+    hasSender: Boolean(obj.sender),
+    identityRequest: reqInfo,
     createdAt: obj.createdAt,
   };
 };

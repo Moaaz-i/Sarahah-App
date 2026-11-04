@@ -3,28 +3,41 @@ import {
   authApi,
   clearSession,
   hasSession,
+  hasUsableAccess,
   refreshSession,
   setSession,
 } from './api.js';
 
 const AuthContext = createContext(null);
+const USER_KEY = 'sarhny_user';
+
+const getCachedUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Holds the current user and keeps it fresh across reloads.
- *
- * Boot sequence:
- *   no refresh token  -> signed out, no network call
- *   access token alive-> signed in from cache, then revalidate with /auth/me
- *   access expired     -> rotate once, then /auth/me
- *   rotation failed    -> clear the session and stay signed out
+ * Instant boot via cached localStorage session, background revalidation.
  */
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [booting, setBooting] = useState(true);
+  const [user, setUser] = useState(() => getCachedUser());
+  const [booting, setBooting] = useState(() => {
+    if (!hasSession()) return false;
+    if (getCachedUser() && hasUsableAccess()) return false;
+    return true;
+  });
 
   const loadMe = useCallback(async () => {
     const { data } = await authApi.me();
     setUser(data.user);
+    if (data?.user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    }
     return data.user;
   }, []);
 
@@ -37,10 +50,13 @@ export function AuthProvider({ children }) {
         return;
       }
       try {
-        await refreshSession();
+        if (!hasUsableAccess()) {
+          await refreshSession();
+        }
         await loadMe();
       } catch {
         clearSession();
+        localStorage.removeItem(USER_KEY);
         if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setBooting(false);
@@ -98,6 +114,9 @@ export function AuthProvider({ children }) {
   const adopt = useCallback((data) => {
     setSession(data);
     setUser(data.user);
+    if (data?.user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    }
     return data.user;
   }, []);
 
@@ -136,6 +155,7 @@ export function AuthProvider({ children }) {
       /* even if the server call fails we drop the local session */
     }
     clearSession();
+    localStorage.removeItem(USER_KEY);
     setUser(null);
   }, []);
 

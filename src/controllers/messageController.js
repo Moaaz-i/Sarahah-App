@@ -13,7 +13,10 @@ export const sendMessage = asyncHandler(async (req, res) => {
       identityClue: req.body.identityClue,
       voiceUrl: req.body.voiceUrl,
     },
-    { fingerprint: fingerprintFromRequest(req) },
+    {
+      fingerprint: fingerprintFromRequest(req),
+      senderId: req.user?._id || null,
+    },
   );
 
   res.status(201).json({
@@ -44,7 +47,9 @@ export const listMessages = asyncHandler(async (req, res) => {
     message: 'Messages fetched successfully',
     data: {
       ...result,
-      messages: result.messages.map(messageService.presentMessage),
+      messages: result.messages.map((m) =>
+        messageService.presentMessage(m, result.identityRequestMap),
+      ),
     },
   });
 });

@@ -10,7 +10,7 @@ import GoogleButton from '../components/GoogleButton.jsx';
 import Logo from '../components/Logo.jsx';
 
 export default function Login() {
-  const { user, signIn } = useAuth();
+  const { user, signIn, confirmLogin } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();

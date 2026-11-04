@@ -50,6 +50,7 @@ if (!/test/i.test(process.env.MONGODB_URI)) {
 }
 
 const { default: connectDB, disconnectDB } = await import('../src/config/database.js');
+const redisService = await import('../src/services/redisService.js');
 
 beforeAll(async () => {
   await connectDB(process.env.MONGODB_URI);
@@ -62,4 +63,5 @@ afterAll(async () => {
 beforeEach(async () => {
   const collections = await mongoose.connection.db.collections();
   await Promise.all(collections.map((collection) => collection.deleteMany({})));
+  await redisService.flushAll();
 });
