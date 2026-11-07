@@ -32,14 +32,20 @@ export function AuthProvider({ children }) {
     return true;
   });
 
+  const updateUserData = useCallback((newUser) => {
+    setUser(newUser);
+    if (newUser) {
+      localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+    } else {
+      localStorage.removeItem(USER_KEY);
+    }
+  }, []);
+
   const loadMe = useCallback(async () => {
     const { data } = await authApi.me();
-    setUser(data.user);
-    if (data?.user) {
-      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-    }
+    updateUserData(data.user);
     return data.user;
-  }, []);
+  }, [updateUserData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,10 +60,12 @@ export function AuthProvider({ children }) {
           await refreshSession();
         }
         await loadMe();
-      } catch {
-        clearSession();
-        localStorage.removeItem(USER_KEY);
-        if (!cancelled) setUser(null);
+      } catch (err) {
+        if (err?.status === 401) {
+          clearSession();
+          localStorage.removeItem(USER_KEY);
+          if (!cancelled) setUser(null);
+        }
       } finally {
         if (!cancelled) setBooting(false);
       }
@@ -79,25 +87,31 @@ export function AuthProvider({ children }) {
       }
     };
 
-    // When user switches or focuses on the other browser, instantly verify with the server
+    // When user switches or focuses back on the tab, verify with the server
     const handleWindowFocus = () => {
       if (hasSession()) {
-        loadMe().catch(() => {
-          clearSession();
-          setUser(null);
+        loadMe().catch((err) => {
+          if (err?.status === 401) {
+            clearSession();
+            localStorage.removeItem(USER_KEY);
+            setUser(null);
+          }
         });
       }
     };
 
-    // Heartbeat check every 10 seconds while visible to detect multi-device logout
+    // Heartbeat check every 60 seconds while visible to detect multi-device logout
     const heartbeat = setInterval(() => {
       if (document.visibilityState === 'visible' && hasSession()) {
-        loadMe().catch(() => {
-          clearSession();
-          setUser(null);
+        loadMe().catch((err) => {
+          if (err?.status === 401) {
+            clearSession();
+            localStorage.removeItem(USER_KEY);
+            setUser(null);
+          }
         });
       }
-    }, 10000);
+    }, 60000);
 
     window.addEventListener('sarhny:auth:logout', handleLogoutBroadcast);
     window.addEventListener('storage', handleStorageChange);
@@ -162,7 +176,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
-      setUser,
+      setUser: updateUserData,
       booting,
       signedIn: Boolean(user),
       isAdmin: user?.role === 'admin',
@@ -173,7 +187,7 @@ export function AuthProvider({ children }) {
       adopt,
       reload: loadMe,
     }),
-    [user, booting, signIn, confirmLogin, register, signOut, adopt, loadMe],
+    [user, updateUserData, booting, signIn, confirmLogin, register, signOut, adopt, loadMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal.jsx';
 import Logo from './Logo.jsx';
+import gcpLogo from '../assets/google-cloud-logo.png';
 import { useToast } from './Toast.jsx';
 import { relativeTime } from '../lib/format.js';
 import { identityClueOf } from '../lib/feedback.js';
@@ -92,7 +93,7 @@ const THEMES = [
   },
 ];
 
-export default function StoryCardModal({ open, onClose, message, username }) {
+export default function StoryCardModal({ open, onClose, message, user, username: rawUsername }) {
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0]);
   const [replyText, setReplyText] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -110,7 +111,27 @@ export default function StoryCardModal({ open, onClose, message, username }) {
 
   if (!open || !message) return null;
 
+  // Real Project & User Data
+  const username = user?.username || rawUsername || '';
+  const displayName = user?.name || (username ? `@${username}` : 'مستخدم صارحني');
+  const userHandle = username ? `@${username}` : '';
+  const projectHost =
+    typeof window !== 'undefined' &&
+    (window.location.host.includes('localhost') || window.location.host.includes('127.0.0.1'))
+      ? 'sar7ny-app.vercel.app'
+      : typeof window !== 'undefined'
+      ? window.location.host
+      : 'sar7ny-app.vercel.app';
+  const profileLink = username ? `${projectHost}/${username}` : projectHost;
+
   const clue = identityClueOf(message.identityClue);
+  let tagLabel = 'رسالة صريحة مجهولة ✉️';
+  if (message.identityRequest?.status === 'accepted' && message.identityRequest?.sender?.name) {
+    tagLabel = `🔓 كشف هوية: ${message.identityRequest.sender.name}`;
+  } else if (clue && clue.key !== 'none') {
+    tagLabel = `${clue.icon} ${clue.label}`;
+  }
+
   const messageText = message.content || (message.voiceUrl ? 'رسالة صوتية مجهولة 🎙️' : 'رسالة صريحة مجهولة');
 
   const copyText = async () => {
@@ -140,7 +161,7 @@ export default function StoryCardModal({ open, onClose, message, username }) {
     }
   };
 
-  const renderAndDownload = () => {
+  const renderAndDownload = async () => {
     setDownloading(true);
     try {
       const canvas = document.createElement('canvas');
@@ -181,25 +202,41 @@ export default function StoryCardModal({ open, onClose, message, username }) {
       ctx.stroke();
       ctx.restore();
 
-      // 3. Header inside card: Logo & Brand
+      // 3. Header inside card: Logo image & Project info
+      try {
+        const logoImg = new Image();
+        logoImg.crossOrigin = 'anonymous';
+        logoImg.src = gcpLogo;
+        await new Promise((resolve) => {
+          if (logoImg.complete) return resolve();
+          logoImg.onload = resolve;
+          logoImg.onerror = resolve;
+        });
+        if (logoImg.naturalWidth) {
+          ctx.drawImage(logoImg, width - cardX - 120, cardY + 50, 60, 60);
+        }
+      } catch {
+        // Fallback without image
+      }
+
       ctx.direction = 'rtl';
       ctx.textAlign = 'right';
 
       ctx.fillStyle = selectedTheme.textColor;
-      ctx.font = 'bold 44px Cairo, Segoe UI, sans-serif';
-      ctx.fillText('صارحني', width - cardX - 70, cardY + 95);
+      ctx.font = 'bold 42px Cairo, Segoe UI, sans-serif';
+      ctx.fillText('صارحني', width - cardX - 140, cardY + 95);
 
       ctx.fillStyle = selectedTheme.subColor;
-      ctx.font = '500 28px Cairo, Segoe UI, sans-serif';
-      ctx.fillText(`@${username || 'sarhny'}`, width - cardX - 70, cardY + 145);
+      ctx.font = '600 26px Cairo, Segoe UI, sans-serif';
+      const handleSub = userHandle && displayName !== userHandle ? `${displayName} (${userHandle})` : displayName;
+      ctx.fillText(handleSub, width - cardX - 70, cardY + 148);
 
-      // Left side badge with Identity Clue
+      // Left side badge with Identity Clue / status
       ctx.direction = 'ltr';
       ctx.textAlign = 'left';
       ctx.fillStyle = selectedTheme.subColor;
       ctx.font = '600 24px Cairo, Segoe UI, sans-serif';
-      const clueLabel = clue && clue.key !== 'none' ? `${clue.icon} ${clue.label}` : 'رسالة صريحة مجهولة ✉️';
-      ctx.fillText(clueLabel, cardX + 70, cardY + 115);
+      ctx.fillText(tagLabel, cardX + 70, cardY + 115);
 
       // Divider line
       ctx.beginPath();
@@ -209,14 +246,38 @@ export default function StoryCardModal({ open, onClose, message, username }) {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 4. Message Content (RTL word wrapped)
+      let textY = cardY + 250;
+
+      // 4. If the message answered a guided question: draw prompt box
+      if (message.promptText) {
+        ctx.save();
+        ctx.beginPath();
+        drawRoundRect(ctx, cardX + 60, textY - 20, cardW - 120, 80, 20);
+        ctx.fillStyle = selectedTheme.replyBg;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = selectedTheme.border;
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.direction = 'rtl';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = selectedTheme.subColor;
+        ctx.font = 'bold 26px Cairo, Segoe UI, sans-serif';
+        const promptSnippet = message.promptText.length > 50 ? `${message.promptText.slice(0, 50)}…` : message.promptText;
+        ctx.fillText(`❓ سؤال: «${promptSnippet}»`, width - cardX - 90, textY + 32);
+
+        textY += 115;
+      }
+
+      // 5. Message Content (RTL word wrapped)
       ctx.direction = 'rtl';
       ctx.textAlign = 'right';
       ctx.fillStyle = selectedTheme.textColor;
 
       const words = messageText.split(/\s+/);
       const hasReply = Boolean(replyText.trim());
-      let fontSize = hasReply ? 34 : 42;
+      let fontSize = hasReply ? 34 : 40;
       if (messageText.length > 250) fontSize = 28;
       else if (messageText.length > 140) fontSize = 32;
 
@@ -238,21 +299,20 @@ export default function StoryCardModal({ open, onClose, message, username }) {
       }
       lines.push(line);
 
-      let textY = cardY + 270;
       for (let i = 0; i < lines.length; i++) {
         ctx.fillText(lines[i], width - cardX - 70, textY);
         textY += lineHeight;
       }
 
-      // 5. Draw Recipient's Reply Box if present
+      // 6. Draw Recipient's Reply Box if present
       if (hasReply) {
-        textY += 40;
+        textY += 35;
         const replyW = cardW - 120;
         const replyX = cardX + 60;
         const replyPadding = 32;
 
         const replyWords = replyText.trim().split(/\s+/);
-        const replyFontSize = 30;
+        const replyFontSize = 28;
         ctx.font = `500 ${replyFontSize}px Cairo, Segoe UI, sans-serif`;
         const replyLineHeight = replyFontSize * 1.5;
         const maxReplyTextWidth = replyW - replyPadding * 2;
@@ -287,7 +347,7 @@ export default function StoryCardModal({ open, onClose, message, username }) {
         // Reply Title
         ctx.fillStyle = selectedTheme.accent;
         ctx.font = 'bold 26px Cairo, Segoe UI, sans-serif';
-        ctx.fillText(`👑 ردي (@${username || 'أنا'}):`, width - cardX - 95, textY + 45);
+        ctx.fillText(`👑 رد ${displayName}:`, width - cardX - 95, textY + 45);
 
         // Reply Text
         ctx.fillStyle = selectedTheme.textColor;
@@ -299,7 +359,7 @@ export default function StoryCardModal({ open, onClose, message, username }) {
         }
       }
 
-      // 6. Footer inside card
+      // 7. Footer inside card with real Project profile URL
       ctx.direction = 'rtl';
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
@@ -310,11 +370,11 @@ export default function StoryCardModal({ open, onClose, message, username }) {
       ctx.textAlign = 'left';
       ctx.fillStyle = selectedTheme.subColor;
       ctx.font = '700 24px Cairo, Segoe UI, sans-serif';
-      ctx.fillText('sarhny.app', cardX + 70, cardY + cardH - 60);
+      ctx.fillText(profileLink, cardX + 70, cardY + cardH - 60);
 
-      // Download as PNG
+      // Download as PNG with actual project naming
       const link = document.createElement('a');
-      link.download = `sarhny-story-${Date.now()}.png`;
+      link.download = `sar7ny-story-${username || 'card'}-${Date.now()}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
       toast.success('تم إنشاء وتحميل صورة البطاقة بنجاح!');
@@ -393,16 +453,32 @@ export default function StoryCardModal({ open, onClose, message, username }) {
           >
             <div className="story-card-preview__head">
               <div className="story-card-preview__brand">
-                <Logo size={28} showText={false} />
+                <Logo size={32} showText={false} />
                 <div>
                   <h4 style={{ color: selectedTheme.textColor }}>صارحني</h4>
-                  <span style={{ color: selectedTheme.subColor }}>@{username || 'sarhny'}</span>
+                  <span style={{ color: selectedTheme.subColor }}>
+                    {displayName} {userHandle && `(${userHandle})`}
+                  </span>
                 </div>
               </div>
               <span className="story-card-preview__tag" style={{ color: selectedTheme.subColor }}>
-                {clue && clue.key !== 'none' ? `${clue.icon} ${clue.label}` : 'رسالة مجهولة ✉️'}
+                {tagLabel}
               </span>
             </div>
+
+            {/* If Answer to Question */}
+            {message.promptText && (
+              <div
+                className="story-card-preview__prompt"
+                style={{
+                  background: selectedTheme.replyBg,
+                  borderColor: selectedTheme.border,
+                  color: selectedTheme.subColor,
+                }}
+              >
+                <span>❓ سؤال: <strong>«{message.promptText}»</strong></span>
+              </div>
+            )}
 
             <div className="story-card-preview__body" style={{ color: selectedTheme.textColor }}>
               <span className="story-card-preview__quote" style={{ color: selectedTheme.accent }}>
@@ -421,14 +497,14 @@ export default function StoryCardModal({ open, onClose, message, username }) {
                 }}
               >
                 <div className="story-card-preview__reply-author" style={{ color: selectedTheme.accent }}>
-                  👑 ردي (@{username || 'أنا'}):
+                  👑 رد {displayName}:
                 </div>
                 <p style={{ color: selectedTheme.textColor }}>{replyText}</p>
               </div>
             )}
 
             <div className="story-card-preview__footer">
-              <span style={{ color: selectedTheme.subColor }}>sarhny.app</span>
+              <span style={{ color: selectedTheme.subColor }}>{profileLink}</span>
               <time style={{ color: 'rgba(255, 255, 255, 0.45)' }}>
                 {relativeTime(message.createdAt)}
               </time>

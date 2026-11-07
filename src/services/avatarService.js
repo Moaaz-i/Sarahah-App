@@ -4,6 +4,11 @@ import path from 'node:path';
 import AppError from '../utils/AppError.js';
 import { ERROR_CODES } from '../constants/messages.js';
 import {
+  isCloudinaryEnabled,
+  uploadImageBuffer,
+  deleteCloudinaryImage,
+} from '../utils/cloudinary.js';
+import {
   UPLOADS_ROOT,
   AVATAR_DIR,
   UPLOADABLE_TYPES,
@@ -97,7 +102,14 @@ const ensureDir = () => mkdir(AVATARS_ABS, { recursive: true });
  * resolved path after traversal resolution.
  */
 export const removeStoredAvatar = async (ref) => {
-  if (!ref || !isUploadRef(ref)) return false;
+  if (!ref) return false;
+
+  // If the reference is hosted on Cloudinary, reclaim it via Cloudinary API.
+  if (typeof ref === 'string' && ref.includes('cloudinary.com')) {
+    return await deleteCloudinaryImage(ref);
+  }
+
+  if (!isUploadRef(ref)) return false;
 
   let abs;
   try {
@@ -127,7 +139,7 @@ export const removeStoredAvatar = async (ref) => {
  * @param {string} declaredMime the client's claim, used only as a cross-check
  * @returns {Promise<string>} the public reference to store in `User.avatar`
  */
-export const storeAvatar = async (buffer, declaredMime = '') => {
+export const storeAvatar = async (buffer, declaredMime = '', userId = null) => {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw AppError.badRequest('No image was uploaded');
   }
@@ -162,6 +174,15 @@ export const storeAvatar = async (buffer, declaredMime = '') => {
         },
       ]);
     }
+  }
+
+  // If Cloudinary is configured (e.g. production/cloud storage), store it remotely
+  if (isCloudinaryEnabled()) {
+    const upload = await uploadImageBuffer(buffer, {
+      folder: 'sar7ny/avatars',
+      publicId: userId ? `avatar_${userId}` : `avatar_${randomUUID()}`,
+    });
+    return upload.url;
   }
 
   await ensureDir();

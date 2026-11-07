@@ -78,6 +78,16 @@ export const sendMessage = async (
 
   const conversationKey = crypto.randomBytes(24).toString('hex');
 
+  let resolvedPromptText = null;
+  if (promptId && Array.isArray(recipient.prompts)) {
+    const matchedPrompt = recipient.prompts.find(
+      (p) => String(p.id) === String(promptId) || String(p._id) === String(promptId),
+    );
+    if (matchedPrompt) {
+      resolvedPromptText = matchedPrompt.text;
+    }
+  }
+
   const createdMessage = await Message.create({
     recipient: recipient._id,
     ...(senderId ? { sender: senderId } : {}),
@@ -85,6 +95,7 @@ export const sendMessage = async (
     category: resolvedCategory,
     identityClue: identityClue || 'none',
     promptId: promptId ? String(promptId).slice(0, 64) : null,
+    promptText: resolvedPromptText,
     harmLabel: screening.harmLabel ?? null,
     harmConfidence: screening.confidence ?? 0,
     sentiment: screening.sentiment ?? 'neutral',
@@ -99,6 +110,8 @@ export const sendMessage = async (
     content: createdMessage.content,
     category: createdMessage.category,
     identityClue: createdMessage.identityClue,
+    promptId: createdMessage.promptId,
+    promptText: createdMessage.promptText,
     sentiment: createdMessage.sentiment,
     isQuarantined: createdMessage.isQuarantined,
     voiceUrl: createdMessage.voiceUrl,
@@ -271,6 +284,7 @@ export const getThreadByConversationKey = async (conversationKey) => {
     content: message.content,
     category: message.category,
     identityClue: message.identityClue,
+    promptText: message.promptText || null,
     createdAt: message.createdAt,
     publicReply: message.publicReply,
     publicReplyAt: message.publicReplyAt,
@@ -343,6 +357,7 @@ export const presentMessage = (message, identityRequestMap = null) => {
     category: obj.category ?? 'general',
     identityClue: obj.identityClue ?? 'none',
     promptId: obj.promptId ?? null,
+    promptText: obj.promptText ?? null,
     sentiment: obj.sentiment ?? 'neutral',
     harmLabel: obj.harmLabel ?? null,
     harmConfidence: obj.harmConfidence ?? 0,

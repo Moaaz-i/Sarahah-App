@@ -26,8 +26,9 @@ apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/password', passwordRoutes);
 apiRouter.use('/confirm-email', confirmEmailRoutes);
 // The feedback router declares its own absolute paths (/reception, /mirror,
-// /goals), so it is mounted once at the API root.
+// /goals), so it is mounted once at the API root, plus an alias under /feedback.
 apiRouter.use('/', feedbackRoutes);
+apiRouter.use('/feedback', feedbackRoutes);
 apiRouter.use('/admin', adminRoutes);
 
 export default apiRouter;

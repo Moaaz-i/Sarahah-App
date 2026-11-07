@@ -72,7 +72,14 @@ export default function ReceptionSettings() {
         enableShield: draft.enableShield,
         quarantineFlagged: draft.quarantineFlagged,
       });
-      await receptionApi.replacePrompts(promptDraft.filter((p) => p.text.trim().length >= 3));
+      const cleanedPrompts = promptDraft
+        .filter((p) => p && typeof p.text === 'string' && p.text.trim().length >= 3)
+        .map((p) => ({
+          id: p.id,
+          text: p.text.trim(),
+          isActive: p.isActive !== false,
+        }));
+      await receptionApi.replacePrompts(cleanedPrompts);
       await load();
       setSaved(true);
       toast.success('حُفظت إعدادات الاستقبال');
@@ -194,12 +201,25 @@ export default function ReceptionSettings() {
         </p>
         <div className="prompt-list">
           {promptDraft.map((p, i) => (
-            <div key={p.id ?? i} className="prompt-row">
+            <div key={p.id ?? i} className={`prompt-row ${p.isActive === false ? 'prompt-row--disabled' : ''}`}>
+              <button
+                type="button"
+                className={`prompt-row__toggle ${p.isActive !== false ? 'prompt-row__toggle--active' : ''}`}
+                title={p.isActive !== false ? 'السؤال مفعل (يظهر للزوار) - انقر للتعطيل' : 'السؤال معطل (مخفي) - انقر للتفعيل'}
+                onClick={() =>
+                  setPromptDraft((list) =>
+                    list.map((item, idx) => (idx === i ? { ...item, isActive: item.isActive === false } : item)),
+                  )
+                }
+              >
+                {p.isActive !== false ? '👁️ ظاهر' : '🙈 مخفي'}
+              </button>
               <input
                 type="text"
-                className="field__input"
+                className="field__input prompt-row__input"
                 value={p.text}
                 maxLength={160}
+                placeholder={`اكتب السؤال رقم ${i + 1} هنا…`}
                 onChange={(e) =>
                   setPromptDraft((list) =>
                     list.map((item, idx) => (idx === i ? { ...item, text: e.target.value } : item)),
@@ -210,9 +230,10 @@ export default function ReceptionSettings() {
                 type="button"
                 className="prompt-row__remove"
                 aria-label="حذف السؤال"
+                title="حذف السؤال"
                 onClick={() => setPromptDraft((list) => list.filter((_, idx) => idx !== i))}
               >
-                ×
+                ✕
               </button>
             </div>
           ))}

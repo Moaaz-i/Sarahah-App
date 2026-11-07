@@ -139,6 +139,16 @@ export const env = Object.freeze({
     },
   }),
 
+  cloudinary: Object.freeze({
+    url: process.env.CLOUDINARY_URL || '',
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    get enabled() {
+      return Boolean(this.url || (this.cloudName && this.apiKey && this.apiSecret));
+    },
+  }),
+
   security: Object.freeze({
     bcryptRounds: int(process.env.BCRYPT_ROUNDS, 10),
     passwordResetTtlMinutes: int(process.env.PASSWORD_RESET_TTL_MINUTES, 15),

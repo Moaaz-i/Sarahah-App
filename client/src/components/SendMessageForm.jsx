@@ -284,20 +284,43 @@ export default function SendMessageForm({
 
       {prompts.length > 0 && (
         <fieldset className="prompt-picker">
-          <legend className="field__label">أجب عن سؤال موجه (اختياري)</legend>
+          <legend className="field__label">
+            <span>❓ أسئلة صراحة مخصصة من صاحب الحساب (اختر سؤالاً للإجابة عليه)</span>
+          </legend>
           <div className="prompt-picker__list">
-            {prompts.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`toggle-chip${promptId === p.id ? ' toggle-chip--active' : ''}`}
-                aria-pressed={promptId === p.id}
-                onClick={() => setPromptId(promptId === p.id ? null : p.id)}
-              >
-                {p.text}
-              </button>
-            ))}
+            {prompts.map((p) => {
+              const isSelected = promptId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`toggle-chip${isSelected ? ' toggle-chip--active' : ''}`}
+                  aria-pressed={isSelected}
+                  onClick={() => setPromptId(isSelected ? null : p.id)}
+                >
+                  <span className="prompt-chip__icon">{isSelected ? '✓' : '💬'}</span>
+                  <span>{p.text}</span>
+                </button>
+              );
+            })}
           </div>
+
+          {activePrompt && (
+            <div className="active-prompt-banner">
+              <div className="active-prompt-banner__text">
+                <span className="active-prompt-banner__icon">🎯</span>
+                <span>أنت تجيب الآن على: <strong>«{activePrompt.text}»</strong></span>
+              </div>
+              <button
+                type="button"
+                className="active-prompt-banner__clear"
+                onClick={() => setPromptId(null)}
+                title="إلغاء اختيار السؤال"
+              >
+                ✕ إلغاء السؤال
+              </button>
+            </div>
+          )}
         </fieldset>
       )}
 

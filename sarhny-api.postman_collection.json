@@ -1023,7 +1023,7 @@
             "description": "**Public and anonymous.** No access token required; supplying one does not record it.\n\nThe recipient username comes from the path (`{{recipientUsername}}`). Content is 1-2000 chars.\n\nThe response is only `{sent: true}` — **no message id is returned**, on purpose: an anonymous send must not hand the sender a handle into someone's inbox. Run *List my inbox* as the recipient and copy `data.messages[0]._id` into `{{messageId}}` for the requests below.\n\nReturns the same generic 404 whether the recipient does not exist or has closed their inbox, so usernames cannot be probed.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Hello from Postman — this is sent anonymously.\"\n}",
+              "raw": "{\n  \"content\": \"رسالة صريحة تجريبية من بوستمان مع تلميح وسؤال\",\n  \"category\": \"general\",\n  \"identityClue\": \"friend\",\n  \"promptId\": \"{{promptId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1031,7 +1031,21 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data) {",
+                  "    if (body.data.conversationKey) pm.collectionVariables.set(\"conversationKey\", body.data.conversationKey);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "List my inbox",
@@ -1075,7 +1089,22 @@
             },
             "description": "**Cursor pagination** (not page/number). Drop `cursor` for the first page, then pass `data.nextCursor` from the previous response. `limit` is 1-50. `isRead` / `isArchived` are optional booleans.\n\nMessages are at `data.messages[]`; copy `data.messages[0]._id` into `{{messageId}}` (an anonymous send never returns the id itself)."
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data.messages && body.data.messages.length > 0) {",
+                  "    pm.collectionVariables.set(\"messageId\", body.data.messages[0]._id);",
+                  "    if (body.data.messages[0].promptId) pm.collectionVariables.set(\"promptId\", body.data.messages[0].promptId);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get one of my messages",
@@ -1214,6 +1243,180 @@
               ]
             },
             "description": "Logical delete — the document is marked deleted and removed from every listing."
+          },
+          "response": []
+        },
+        {
+          "name": "Get message counts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/counts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "counts"
+              ]
+            },
+            "description": "Returns the recipient inbox counts: ."
+          },
+          "response": []
+        },
+        {
+          "name": "Release quarantined message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}/release",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}",
+                "release"
+              ]
+            },
+            "description": "Allows recipient to release a harm-shield held/quarantined message into the normal inbox."
+          },
+          "response": []
+        },
+        {
+          "name": "Reply to message (Recipient)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/{{messageId}}/reply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{messageId}}",
+                "reply"
+              ]
+            },
+            "description": "Recipient sends a reply to an anonymous message, starting/continuing an anonymous thread and setting a public reply for story card.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"شكراً لك على رسالتك الصريحة!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get anonymous thread (Sender Thread View)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/thread/{{conversationKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "thread",
+                "{{conversationKey}}"
+              ]
+            },
+            "description": "Public endpoint allowing the original sender to view the message thread and replies using the secret conversationKey returned during send."
+          },
+          "response": []
+        },
+        {
+          "name": "Reply in anonymous thread (Sender Thread Reply)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/messages/thread/{{conversationKey}}/reply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "thread",
+                "{{conversationKey}}",
+                "reply"
+              ]
+            },
+            "description": "Allows the anonymous sender to reply back to the recipient inside the secret thread.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"العفو، أسعدني جداً ردك اللطيف!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -2151,7 +2354,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"prompts\": [\n    \"ما هي نقطة قوتي؟\",\n    \"ما هو الشيء الذي ينبغي أن أطوره؟\"\n  ]\n}"
+              "raw": "{\n  \"prompts\": [\n    {\n      \"text\": \"ما هي نقطة قوتي في رأيك؟\",\n      \"isActive\": true\n    },\n    {\n      \"text\": \"ما الشيء الذي ينبغي أن أطوره في شخصيتي؟\",\n      \"isActive\": true\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/feedback/reception/prompts",
@@ -2168,7 +2371,21 @@
             },
             "description": "Sets custom guided feedback prompt questions."
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data.prompts && body.data.prompts.length > 0) {",
+                  "    pm.collectionVariables.set(\"promptId\", body.data.prompts[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get feedback mirror",
@@ -2420,6 +2637,437 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "10 Identity Requests",
+      "description": "The Identity Reveal Request workflow: Recipient asks to know who sent an anonymous message, Sender views and accepts/rejects, creating a direct conversation upon acceptance.",
+      "item": [
+        {
+          "name": "Request sender identity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data._id) {",
+                  "    pm.collectionVariables.set(\"requestId\", body.data._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/identity-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity-requests"
+              ]
+            },
+            "description": "Recipient requests to reveal the identity of an anonymous message sender. The request is created with status: \"pending\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"{{messageId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get received identity requests (Sender View)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data.requests && body.data.requests.length > 0) {",
+                  "    pm.collectionVariables.set(\"requestId\", body.data.requests[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/identity-requests/received?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity-requests",
+                "received"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "The sender views all requests received from recipients asking to reveal their identity."
+          },
+          "response": []
+        },
+        {
+          "name": "Get sent identity requests (Recipient View)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/identity-requests/sent?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity-requests",
+                "sent"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "The recipient views all identity reveal requests they sent to message senders."
+          },
+          "response": []
+        },
+        {
+          "name": "Get request by message ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/identity-requests/message/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity-requests",
+                "message",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Checks the identity request status (pending, accepted, rejected) linked to a specific message ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept or reject request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data.conversation && body.data.conversation._id) {",
+                  "    pm.collectionVariables.set(\"conversationId\", body.data.conversation._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/identity-requests/{{requestId}}/respond",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity-requests",
+                "{{requestId}}",
+                "respond"
+              ]
+            },
+            "description": "The sender accepts or rejects the request. Action is \"accept\" or \"reject\". When accepted, the identity is revealed and a direct conversation is automatically linked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"accept\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 Conversations",
+      "description": "Direct 1-on-1 private conversations between revealed parties. Strictly authorized to only the two participants (third parties receive 403 Forbidden).",
+      "item": [
+        {
+          "name": "List direct conversations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.data && body.data.conversations && body.data.conversations.length > 0) {",
+                  "    pm.collectionVariables.set(\"conversationId\", body.data.conversations[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/conversations?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Lists all direct conversations the authenticated user is participating in."
+          },
+          "response": []
+        },
+        {
+          "name": "Get conversation details",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/conversations/{{conversationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "conversations",
+                "{{conversationId}}"
+              ]
+            },
+            "description": "Returns details and participants of a specific direct conversation."
+          },
+          "response": []
+        },
+        {
+          "name": "Get conversation messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/conversations/{{conversationId}}/messages?page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "conversations",
+                "{{conversationId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Retrieves messages inside the conversation. Strictly authorized to conversation participants."
+          },
+          "response": []
+        },
+        {
+          "name": "Send conversation message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/conversations/{{conversationId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "conversations",
+                "{{conversationId}}",
+                "messages"
+              ]
+            },
+            "description": "Sends a direct message inside the 1-on-1 conversation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"مرحباً! سعيد بالتواصل المباشر معك.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -2493,6 +3141,36 @@
       "value": "",
       "type": "string",
       "description": "ID of a personal feedback goal"
+    },
+    {
+      "key": "requestId",
+      "value": "",
+      "type": "string",
+      "description": "ID of an identity reveal request"
+    },
+    {
+      "key": "conversationId",
+      "value": "",
+      "type": "string",
+      "description": "ID of a 1-on-1 direct conversation"
+    },
+    {
+      "key": "conversationKey",
+      "value": "",
+      "type": "string",
+      "description": "Secret key for anonymous conversation thread"
+    },
+    {
+      "key": "promptId",
+      "value": "",
+      "type": "string",
+      "description": "ID of a guided honesty prompt"
+    },
+    {
+      "key": "loginTicket",
+      "value": "",
+      "type": "string",
+      "description": "Temporary ticket for 2FA login verification"
     }
   ]
 }

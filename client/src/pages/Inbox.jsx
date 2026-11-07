@@ -190,6 +190,17 @@ function MessageItem({ message, onChanged, onReport, onGoal, onStory, showCatego
 
       <HarmNotice message={message} />
 
+      {/* Guided Question Banner */}
+      {message.promptText && (
+        <div className="msg__prompt-answered">
+          <div className="msg__prompt-badge">
+            <span className="msg__prompt-badge-icon">❓</span>
+            <span>إجابة على سؤالك المطروح:</span>
+          </div>
+          <p className="msg__prompt-quote">«{message.promptText}»</p>
+        </div>
+      )}
+
       <p className={`msg__body${expanded ? '' : ' msg__body--clamp'}`}>{message.content}</p>
 
       {/* Voice Memo Player */}
@@ -956,6 +967,7 @@ export default function Inbox() {
         open={Boolean(storyMessage)}
         onClose={() => setStoryMessage(null)}
         message={storyMessage}
+        user={user}
         username={user?.username}
       />
 

@@ -127,11 +127,15 @@ export const replacePrompts = async (userId, prompts = []) => {
   const user = await User.findById(userId);
   if (!user) throw AppError.notFound('User not found');
 
-  user.prompts = prompts.map((p) => ({
-    id: crypto.randomUUID(),
-    text: String(p.text ?? '').trim(),
-    isActive: p.isActive !== false,
-  })).filter((p) => p.text.length >= 3);
+  user.prompts = prompts.map((p) => {
+    const rawId = typeof p.id === 'string' ? p.id.trim() : '';
+    const isTempId = !rawId || rawId.startsWith('new_') || rawId.startsWith('starter_');
+    return {
+      id: isTempId ? crypto.randomUUID() : rawId.slice(0, 64),
+      text: String(p.text ?? '').trim(),
+      isActive: p.isActive !== false,
+    };
+  }).filter((p) => p.text.length >= 3);
 
   if (user.prompts.length > MAX_PROMPTS) {
     throw AppError.badRequest(`You can publish at most ${MAX_PROMPTS} prompts`);

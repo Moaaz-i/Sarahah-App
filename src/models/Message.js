@@ -121,6 +121,14 @@ const messageSchema = new mongoose.Schema(
       default: null,
     },
 
+    /** The snapshot text of the guided prompt answered. */
+    promptText: {
+      type: String,
+      trim: true,
+      maxlength: [200, 'Prompt text is too long'],
+      default: null,
+    },
+
     /** Heuristic sentiment classification of the note. */
     sentiment: {
       type: String,

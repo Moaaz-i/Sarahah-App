@@ -30,14 +30,16 @@ export const replacePromptsSchema = z
       .array(
         z
           .object({
+            id: z.string().max(64).optional(),
             text: z
               .string({ required_error: 'prompt text is required' })
               .trim()
               .min(3, 'prompt text must be at least 3 characters')
               .max(160, 'prompt text cannot exceed 160 characters'),
             isActive: z.boolean().default(true),
+            createdAt: z.any().optional(),
           })
-          .strict(),
+          .passthrough(),
       )
       .max(6, 'you can publish at most 6 prompts'),
   })

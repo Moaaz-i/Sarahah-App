@@ -95,7 +95,7 @@ export const setUploadedAvatar = async (userId, buffer, declaredMime) => {
 
   // Write the new file BEFORE touching the account, so a write failure leaves
   // the user's existing avatar intact rather than pointing at nothing.
-  const ref = await avatarService.storeAvatar(buffer, declaredMime);
+  const ref = await avatarService.storeAvatar(buffer, declaredMime, userId);
 
   const user = await User.findByIdAndUpdate(
     userId,

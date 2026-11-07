@@ -192,7 +192,11 @@ async function performRefresh(force = false) {
       setSession(data);
       return data.accessToken;
     } catch (err) {
-      clearSession();
+      // Only clear the session if the refresh token was explicitly rejected with 401/403
+      // Do NOT clear on network errors or 429 rate limit or 5xx server errors
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        clearSession();
+      }
       throw err;
     }
   } finally {

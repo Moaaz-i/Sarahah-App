@@ -163,6 +163,15 @@ export default function Thread() {
         </div>
 
         <div className="thread-original-card__body">
+          {thread.promptText && (
+            <div className="msg__prompt-answered" style={{ marginBottom: '1rem' }}>
+              <div className="msg__prompt-badge">
+                <span className="msg__prompt-badge-icon">❓</span>
+                <span>إجابة على السؤال:</span>
+              </div>
+              <p className="msg__prompt-quote">«{thread.promptText}»</p>
+            </div>
+          )}
           <p>{thread.content}</p>
           {thread.voiceUrl && (
             <div style={{ marginTop: '1rem' }}>
